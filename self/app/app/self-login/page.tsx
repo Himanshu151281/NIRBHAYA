@@ -1,6 +1,6 @@
 "use client";
 
-import { useSwarakhsha } from "@/utils/useSwarContext";
+import { useNirbhaya } from "@/utils/useSwarContext";
 import { countries, getUniversalLink } from "@selfxyz/core";
 import {
   SelfAppBuilder,
@@ -12,7 +12,7 @@ import { useEffect, useMemo, useState } from "react";
 
 export default function Home() {
   const { whitelistAddress, currentAccount, isWhitelistedFunc } =
-    useSwarakhsha();
+    useNirbhaya();
 
   const router = useRouter();
   const [isMounted, setIsMounted] = useState(false); // ✅ Added mounting state

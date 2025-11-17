@@ -22,18 +22,19 @@ logging.basicConfig(level=logging.INFO)
 # Load .env file
 load_dotenv()  # looks for .env in current directory
 
-# Set OpenAI API key and initialize client
-OPENAI_KEY = os.getenv("OPENAI_API_KEY")
-openai_client = None
+# Set Gemini API key and initialize client
+GEMINI_KEY = os.getenv("GEMINI_API_KEY")
+gemini_client = None
 
-if OPENAI_KEY:
+if GEMINI_KEY:
     try:
-        from openai import OpenAI
-        openai_client = OpenAI(api_key=OPENAI_KEY)
+        import google.generativeai as genai
+        genai.configure(api_key=GEMINI_KEY)
+        gemini_client = genai.GenerativeModel('gemini-pro')
     except ImportError:
-        print("Warning: OpenAI package not installed. Install with: pip install openai")
+        print("Warning: google-generativeai package not installed. Install with: pip install google-generativeai")
 else:
-    print("Warning: OPENAI_API_KEY not set in .env")
+    print("Warning: GEMINI_API_KEY not set in .env")
 
 
 # ---------------------------
@@ -148,11 +149,11 @@ def openai_query(prompt: str, context: str, model: str="gpt-4o-mini", max_tokens
 # Routes
 # ---------------------------
 @app.post("/query", response_model=QueryResponse)
-async def query_openai(req: QueryRequest):
+async def query_gemini(req: QueryRequest):
     try:
-        resp = openai_query(req.query, req.context)
+        resp = gemini_query(req.query, req.context)
         text = resp["choices"][0]["message"]["content"].strip()
-        print(f"OpenAI response: {text[:200]}...")
+        print(f"Gemini response: {text[:200]}...")
         return QueryResponse(answer=text, raw=resp)
     except Exception as e:
         logging.exception("Failed /query")
@@ -227,8 +228,8 @@ async def compute_clusters(req: ComputeRequest):
         
         used_pincodes: List[str] = []
         try:
-            if openai_client and len(unique_pincodes) > 0:
-                logging.info("Starting OpenAI pincode filtering...")
+            if gemini_client and len(unique_pincodes) > 0:
+                logging.info("Starting Gemini pincode filtering...")
                 rows = [f"{r['pincode']}: {r['lat']},{r['lon']}" for _,r in unique_pincodes.iterrows()]
                 sample_text = "\n".join(rows[:200])
                 prompt = (
@@ -237,11 +238,11 @@ async def compute_clusters(req: ComputeRequest):
                     f"Pincodes list:\n{sample_text}\n\n"
                     "Return JSON array of pincodes plausibly along the route."
                 )
-                logging.info(f"OpenAI prompt length: {len(prompt)} chars")
+                logging.info(f"Gemini prompt length: {len(prompt)} chars")
                 
-                resp = openai_query(prompt)
+                resp = gemini_query(prompt)
                 text = resp["choices"][0]["message"]["content"].strip()
-                logging.info(f"OpenAI response: {text[:200]}...")
+                logging.info(f"Gemini response: {text[:200]}...")
                 
                 match = re.search(r"(\[.*\])", text, flags=re.S)
                 if match:
@@ -258,12 +259,12 @@ async def compute_clusters(req: ComputeRequest):
                 
                 if len(used_pincodes) == 0:
                     used_pincodes = unique_pincodes["pincode"].astype(str).tolist()
-                    logging.info("No valid pincodes from OpenAI, using all unique pincodes")
+                    logging.info("No valid pincodes from Gemini, using all unique pincodes")
             else:
                 used_pincodes = unique_pincodes["pincode"].astype(str).tolist()
-                logging.info("OpenAI not available or no pincodes, using all unique pincodes")
+                logging.info("Gemini not available or no pincodes, using all unique pincodes")
         except Exception as e:
-            logging.error(f"Error in OpenAI filtering: {str(e)}")
+            logging.error(f"Error in Gemini filtering: {str(e)}")
             used_pincodes = unique_pincodes["pincode"].astype(str).tolist()
             logging.info("Fallback: using all unique pincodes")
 

@@ -18,7 +18,7 @@ export default function Nav() {
       {/* Logo */}
       <div className="flex items-center gap-3">
         <Shield className="h-8 w-8 text-primary" />
-        <span className="text-2xl font-bold text-foreground">Swarakhsha</span>
+        <span className="text-2xl font-bold text-foreground">NIRBHAYA</span>
       </div>
 
       {/* Navigation */}
@@ -26,7 +26,6 @@ export default function Nav() {
         {[
           { to: "/", icon: Home, label: "Home" },
           { to: "/search-location", icon: MapPin, label: "Search Location" },
-          { to: "/reports", icon: Newspaper, label: "Reports" },
           { to: "/testify", icon: MessageSquare, label: "Testify" },
         ].map((item) => (
           <Link

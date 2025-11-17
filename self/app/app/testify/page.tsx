@@ -1,13 +1,17 @@
 "use client";
 
 import Nav from "@/components/custom/Nav"; // adjust path based on your structure
-import { useSwarakhsha } from "@/utils/useSwarContext";
+import { useNirbhaya } from "@/utils/useSwarContext";
 import { useRouter } from "next/navigation"; // ✅ useRouter instead of useNavigate
 import { PinataSDK } from "pinata";
 import { useEffect, useRef, useState } from "react";
+import Map, { Marker } from "react-map-gl";
+import "mapbox-gl/dist/mapbox-gl.css";
+
+const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
 
 export default function ReportIncident() {
-  const { addReport } = useSwarakhsha();
+  const { addReport } = useNirbhaya();
 
   const [photos, setPhotos] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
@@ -18,6 +22,13 @@ export default function ReportIncident() {
   }>({
     lat: null,
     lng: null,
+  });
+  const [locationMode, setLocationMode] = useState<"current" | "manual">("current");
+  const [showMap, setShowMap] = useState(false);
+  const [mapViewport, setMapViewport] = useState({
+    longitude: 77.209,
+    latitude: 28.6139,
+    zoom: 12
   });
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -34,13 +45,28 @@ export default function ReportIncident() {
 
   // Ask location on load
   useEffect(() => {
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-      },
-      (err) => console.error("Error getting location", err)
-    );
-  }, []);
+    if (locationMode === "current") {
+      console.log("🔍 Getting current location...");
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          setLocation(loc);
+          setMapViewport({
+            longitude: pos.coords.longitude,
+            latitude: pos.coords.latitude,
+            zoom: 15
+          });
+          console.log("✅ Current location set:", loc);
+        },
+        (err) => {
+          console.error("❌ Error getting location:", err);
+          alert("Unable to get your location. Please select location manually.");
+          setLocationMode("manual");
+          setShowMap(true);
+        }
+      );
+    }
+  }, [locationMode]);
 
   // Start camera automatically
   useEffect(() => {
@@ -222,144 +248,85 @@ export default function ReportIncident() {
   }
 
   const handleSubmit = async () => {
+    if (!description.trim()) {
+      alert("Please add a description");
+      return;
+    }
+
+    if (photos.length === 0) {
+      alert("Please capture or upload at least one photo");
+      return;
+    }
+
+    if (!location.lat || !location.lng) {
+      alert("Location not available. Please enable location services or select location manually.");
+      return;
+    }
+
+    console.log("📍 Using location:", location);
+
     try {
       setIsLoading(true);
 
+      console.log("📤 Starting image upload to IPFS...");
       const uploadedHashes: string[] = [];
 
       for (const photo of photos) {
+        console.log(`Uploading ${photo.name}...`);
         const response = await pinata.upload.public.file(photo);
         uploadedHashes.push(response.cid ?? "");
       }
 
-      console.log("Uploaded image IPFS hashes:", uploadedHashes);
+      console.log("✅ Uploaded image IPFS hashes:", uploadedHashes);
 
-      const incidentData = {
-        description,
-        location,
+      // Create report data
+      const reportData = {
+        id: Date.now(),
+        title: description.substring(0, 50) + (description.length > 50 ? "..." : ""),
+        description: description,
+        location: {
+          lat: location.lat,
+          lng: location.lng,
+          address: `${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}`
+        },
         images: uploadedHashes,
+        severity: "Medium", // Default severity
+        timestamp: Date.now(),
+        date: new Date().toLocaleDateString("en-GB", {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+        })
       };
 
-      console.log("Submitting Incident Data:", incidentData);
+      console.log("💾 Saving report to local storage...");
+      
+      // Get existing reports from local storage
+      const existingReports = JSON.parse(localStorage.getItem("incident_reports") || "[]");
+      
+      // Add new report
+      existingReports.unshift(reportData); // Add to beginning
+      
+      // Save back to local storage
+      localStorage.setItem("incident_reports", JSON.stringify(existingReports));
+      
+      console.log("✅ Report saved successfully!");
+      console.log("📊 Total reports:", existingReports.length);
+      
+      alert(`Report submitted successfully! 🎉\n\nYour incident has been recorded with location:\nLat: ${location.lat.toFixed(6)}\nLng: ${location.lng.toFixed(6)}`);
+      
+      // Reset form
+      setPhotos([]);
+      setPreviews([]);
+      setDescription("");
+      setIsLoading(false);
+      
+      // Redirect to home
+      router.push("/");
 
-      const today = new Date();
-      const formattedDate = today.toLocaleDateString("en-GB", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      });
-
-      try {
-        const res = await fetch("/api/ai/", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            query:
-              'Given the description, return only a valid JSON object in this exact format: { "id": "1", "pincode: 110076, "title": "Eve teasing near metro station", "description": "Suspicious behavior reported at the Rajiv Chowk metro area.", "fullText": "I was waiting outside the metro station when I noticed a group of men following women and passing inappropriate comments. It made the environment unsafe. The authorities should increase patrolling in this area.", "date": "Sep 22, 2025", "location": "Rajiv Chowk, New Delhi", "severity": "High", "images": ["ipfshash", "ipfshash"] }. Return ONLY the JSON object, no markdown formatting, no additional text. The date in the json response should be' +
-              formattedDate +
-              "date, the location should be latitude=" +
-              incidentData.location.lat +
-              ", longitude=" +
-              incidentData.location.lng +
-              ". The severity should be one of Low, Medium, High based on the description. The images field should use the uploaded IPFS hashes. Make sure the JSON is correctly formatted and parsable.",
-            context:
-              description +
-              " Images: " +
-              uploadedHashes.join(", ") +
-              ". Set the location as well as determine the pincode using the latitude and longitude values provided above.",
-          }),
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-
-          // Use the fixed parsing function
-          const parsedReport = await parseAIResponseFixed(data);
-
-          // Now you can access individual values safely
-          console.log("✅ Successfully parsed report:", parsedReport);
-          console.log("Individual values and their types:");
-
-          const long = incidentData.location.lng?.toString();
-          const lat = incidentData.location.lat?.toString();
-
-          console.log("Types of values being sent to addReport:");
-          console.log(
-            "Title:",
-            parsedReport.title,
-            "| Type:",
-            typeof parsedReport.title
-          );
-          console.log(
-            "Description:",
-            parsedReport.description,
-            "| Type:",
-            typeof parsedReport.description
-          );
-          console.log(
-            "FullText:",
-            parsedReport.fullText,
-            "| Type:",
-            typeof parsedReport.fullText
-          );
-          console.log(
-            "Location:",
-            parsedReport.location,
-            "| Type:",
-            typeof parsedReport.location
-          );
-          console.log("Latitude:", lat || "", "| Type:", typeof (lat || ""));
-          console.log("Longitude:", long || "", "| Type:", typeof (long || ""));
-          console.log(
-            "Image:",
-            parsedReport.images[0],
-            "| Type:",
-            typeof parsedReport.images[0]
-          );
-          console.log(
-            "Severity:",
-            parsedReport.severity,
-            "| Type:",
-            typeof parsedReport.severity
-          );
-          console.log(
-            "Pincode:",
-            parsedReport.pincode,
-            "| Type:",
-            typeof parsedReport.pincode
-          );
-
-          // const jsonString: string[] = JSON.stringify(parsedReport.images);
-
-          // console.log("Images array:", jsonString);
-
-          addReport(
-            parsedReport.title,
-            parsedReport.description,
-            parsedReport.fullText,
-            parsedReport.location,
-            lat || "",
-            long || "",
-            parsedReport.images[0],
-            parsedReport.severity,
-            parsedReport.pincode
-          );
-
-          // Use the parsed data in your application
-          // setReportData(parsedReport);
-        } else {
-          console.error("API request failed:", res.status, res.statusText);
-        }
-      } catch (error) {
-        console.error("Error sending data to backend:", error);
-      }
-
-      router.replace("/"); // ✅ Next.js navigation
     } catch (err) {
-      console.error("Error uploading images:", err);
-      alert("Failed to upload images. Please try again.");
+      console.log("❌ Error submitting report:", err);
+      alert("Failed to submit report. Please check your connection and try again.");
       setIsLoading(false);
     }
   };
@@ -439,6 +406,112 @@ export default function ReportIncident() {
           className="w-full sm:max-w-lg p-3 text-sm md:text-base border border-border rounded-lg focus:ring-2 focus:ring-ring focus:outline-none shadow-sm mt-4 bg-background text-foreground"
           rows={2}
         />
+
+        {/* Location Selection */}
+        <div className="w-full sm:max-w-lg mt-4 space-y-3">
+          <div className="flex items-center justify-between p-4 border border-border rounded-lg bg-card">
+            <div className="flex-1">
+              <h3 className="font-semibold text-foreground mb-1">📍 Incident Location</h3>
+              {location.lat && location.lng ? (
+                <div className="text-sm text-muted-foreground space-y-1">
+                  <p>Latitude: {location.lat.toFixed(6)}</p>
+                  <p>Longitude: {location.lng.toFixed(6)}</p>
+                  <p className="text-xs text-green-600 mt-1">
+                    ✓ Location {locationMode === "current" ? "detected" : "selected"}
+                  </p>
+                </div>
+              ) : (
+                <p className="text-sm text-yellow-600">⚠️ No location set</p>
+              )}
+            </div>
+            
+            <button
+              onClick={() => {
+                setLocationMode("current");
+                console.log("🔄 Refreshing current location...");
+                navigator.geolocation.getCurrentPosition(
+                  (pos) => {
+                    const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                    setLocation(loc);
+                    setMapViewport({
+                      longitude: pos.coords.longitude,
+                      latitude: pos.coords.latitude,
+                      zoom: 15
+                    });
+                    console.log("✅ Location updated:", loc);
+                  },
+                  (err) => {
+                    console.error("❌ Error:", err);
+                    alert("Unable to get location. Please select manually.");
+                  }
+                );
+              }}
+              className="ml-3 px-3 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-sm"
+            >
+              🔄 Use Current
+            </button>
+          </div>
+
+          {/* Toggle Map Button */}
+          <button
+            onClick={() => {
+              setShowMap(!showMap);
+              setLocationMode("manual");
+              if (!showMap && location.lat && location.lng) {
+                setMapViewport({
+                  longitude: location.lng,
+                  latitude: location.lat,
+                  zoom: 15
+                });
+              }
+            }}
+            className="w-full px-4 py-3 bg-purple-500 text-white rounded-lg hover:bg-purple-600 font-medium"
+          >
+            {showMap ? "✓ Close Map" : "🗺️ Select Location on Map"}
+          </button>
+
+          {/* Map for Manual Selection */}
+          {showMap && (
+            <div className="border-2 border-purple-500 rounded-lg overflow-hidden">
+              <div className="bg-purple-50 p-2 text-sm text-center">
+                Click on the map to set incident location
+              </div>
+              <Map
+                {...mapViewport}
+                onMove={(evt) => setMapViewport(evt.viewState)}
+                onClick={(e) => {
+                  const { lng, lat } = e.lngLat;
+                  setLocation({ lat, lng });
+                  console.log("📍 Manual location selected:", { lat, lng });
+                }}
+                mapStyle="mapbox://styles/mapbox/streets-v12"
+                mapboxAccessToken={MAPBOX_TOKEN}
+                style={{ width: "100%", height: "400px" }}
+              >
+                {location.lat && location.lng && (
+                  <Marker
+                    longitude={location.lng}
+                    latitude={location.lat}
+                    anchor="bottom"
+                  >
+                    <div className="relative">
+                      <div className="w-8 h-8 bg-red-500 rounded-full border-4 border-white shadow-lg animate-pulse" />
+                      <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-black text-white px-2 py-1 rounded text-xs whitespace-nowrap">
+                        Incident Location
+                      </div>
+                    </div>
+                  </Marker>
+                )}
+              </Map>
+              <div className="bg-gray-100 p-2 text-xs text-center text-gray-600">
+                {location.lat && location.lng 
+                  ? `Selected: ${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}`
+                  : "Click anywhere on the map to mark incident location"
+                }
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Submit */}
         <button

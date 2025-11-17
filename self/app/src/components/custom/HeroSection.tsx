@@ -15,7 +15,7 @@ export default function HeroSection() {
         </h1>
 
         <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed text-pretty">
-          Swarakhsha helps women stay safe by reporting incidents, planning safe
+          NIRBHAYA helps women stay safe by reporting incidents, planning safe
           routes, and alerting trusted contacts — all powered by AI and secure
           blockchain verification.
         </p>
