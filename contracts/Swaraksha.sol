@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-contract Swarakhsha {
+contract Nirbhaya {
     address public owner;
     uint256 cases = 0;
 

@@ -90,9 +90,13 @@ function Reports() {
       try {
         setLoading(true);
         setError(null);
+        console.log("📊 Fetching all reports from blockchain...");
         const allReports: Report[] = await getAllReports();
+        console.log("✅ Fetched reports:", allReports);
         if (allReports && allReports.length > 0) {
           setReports(allReports);
+        } else {
+          console.log("ℹ️ No reports found, showing mock data");
         }
       } catch (err) {
         console.error("Error fetching reports:", err);
@@ -103,10 +107,27 @@ function Reports() {
       }
     };
 
-    // if (getAllReports) {
     fetchReports();
-    // }
   }, [getAllReports]);
+
+  // Manual refresh function
+  const refreshReports = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      console.log("🔄 Manually refreshing reports...");
+      const allReports: Report[] = await getAllReports();
+      if (allReports && allReports.length > 0) {
+        setReports(allReports);
+        console.log("✅ Reports refreshed:", allReports.length);
+      }
+    } catch (err) {
+      console.error("Error refreshing reports:", err);
+      setError("Failed to refresh reports.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Function to return severity badge styles
   const getSeverityClass = (severity: string) => {
@@ -171,9 +192,19 @@ function Reports() {
       <div className="max-w-3xl mx-auto pt-10">
         {/* Heading */}
         <div className="text-center mb-10">
-          <h1 className="text-3xl md:text-4xl font-bold text-foreground">
-            Recent Reports
-          </h1>
+          <div className="flex items-center justify-center gap-4 mb-4">
+            <h1 className="text-3xl md:text-4xl font-bold text-foreground">
+              Recent Reports
+            </h1>
+            <button
+              onClick={refreshReports}
+              disabled={loading}
+              className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-400 transition"
+              title="Refresh reports"
+            >
+              {loading ? "⏳" : "🔄"}
+            </button>
+          </div>
           <p className="text-muted-foreground mt-2">
             Stay informed about the latest incidents reported on the platform.
           </p>

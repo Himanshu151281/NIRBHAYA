@@ -15,7 +15,7 @@ const actions = [
     id: "report",
     title: "Report Incident",
     description:
-      "Upload photo/video, describe the situation, and get verified on-chain",
+      "Upload photo/video, describe the situation, and save locally",
     icon: Camera,
     variant: "default" as const,
     emoji: "📸",
@@ -23,18 +23,10 @@ const actions = [
   {
     id: "route",
     title: "Safe Route Planner",
-    description: "AI suggests the safest route to your destination",
+    description: "View incident map and plan the safest route to your destination",
     icon: Shield,
     variant: "default" as const,
     emoji: "🛡️",
-  },
-  {
-    id: "reports",
-    title: "View Reports",
-    description: "Check nearby incidents or your past reports",
-    icon: MapPin,
-    variant: "outline" as const,
-    emoji: "📍",
   },
 ];
 

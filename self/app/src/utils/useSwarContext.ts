@@ -1,8 +1,8 @@
 import { useContext } from "react";
 import { SwarContext } from "../context/swarContext";
 
-export const useSwarakhsha = () => {
+export const useNirbhaya = () => {
   const ctx = useContext(SwarContext);
-  if (!ctx) throw new Error("useBinFinder must be used inside BinFinderProvider");
+  if (!ctx) throw new Error("useNirbhaya must be used inside SwarProvider");
   return ctx;
 };

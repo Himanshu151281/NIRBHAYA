@@ -3,5 +3,5 @@ uvicorn[standard]
 pandas
 numpy
 scikit-learn
-openai
+google-generativeai
 pydantic

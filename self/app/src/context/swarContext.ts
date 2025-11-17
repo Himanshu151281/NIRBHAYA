@@ -2,15 +2,16 @@ import React from "react";
 
 export interface Report {
   caseId: number;
-  latitude: string;
-  longitude: string;
   title: string;
   description: string;
-  timestamp: number;
-  images: string[];
-  severity: string;   // "high" | "medium" | "low"
-  reportType: string;
+  fullText: string;
+  location: string;
+  latitude: string;
+  longitude: string;
+  image: string;
+  severity: string;   // "High" | "Medium" | "Low"
   pincode: string;
+  timestamp: number;
   userAddress: string;
 }
 
