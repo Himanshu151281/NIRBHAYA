@@ -1,4 +1,35 @@
 /** @type {import('next').NextConfig} */
-const nextConfig = {};
+const nextConfig = {
+  // Disable all caching - always fetch fresh data
+  experimental: {
+    isrMemoryCacheSize: 0,
+  },
+  // Disable static optimization
+  generateBuildId: async () => {
+    return `build-${Date.now()}`;
+  },
+  // Disable ETag generation
+  headers: async () => {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'no-store, no-cache, must-revalidate, max-age=0',
+          },
+          {
+            key: 'Pragma',
+            value: 'no-cache',
+          },
+          {
+            key: 'Expires',
+            value: '0',
+          },
+        ],
+      },
+    ];
+  },
+};
 
 export default nextConfig;

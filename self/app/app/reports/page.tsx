@@ -33,7 +33,13 @@ function Reports() {
 
   const { getAllReports } = context;
 
-  // Mock data initially
+  // Start with empty array - no mock data
+  const [reports, setReports] = useState<Report[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // Mock data initially (only shown if backend fails)
   const mockIncidents: Report[] = [
     {
       caseId: 1,

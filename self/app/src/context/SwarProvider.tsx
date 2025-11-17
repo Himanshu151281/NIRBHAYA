@@ -1,173 +1,40 @@
 "use client";
 
-import { ethers, JsonRpcProvider, Wallet } from "ethers";
-import { useRouter } from "next/navigation"; // ✅ Changed from "next/router"
-import React, { useEffect, useState } from "react";
-import abi from "../utils/abi.json";
+import { useRouter } from "next/navigation";
+import React from "react";
 import { SwarContext } from "./swarContext";
 
-declare global {
-  interface EthereumProvider {
-    request(args: { method: string; params?: unknown[] }): Promise<unknown>;
-    on?(eventName: string, callback: (...args: unknown[]) => void): void;
-    removeListener?(
-      eventName: string,
-      callback: (...args: unknown[]) => void
-    ): void;
-  }
-  interface Window {
-    ethereum?: EthereumProvider;
-  }
+interface Report {
+  caseId: number;
+  title: string;
+  description: string;
+  fullText: string;
+  location: string;
+  latitude: string;
+  longitude: string;
+  image: string;
+  severity: string;
+  pincode: string;
+  timestamp: number;
+  userAddress: string;
 }
 
 export const SwarProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const backendURL = "http://localhost:8080";
-
-  const [chainId, setChainId] = useState<string>("");
-  const [currentAccount, setCurrentAccount] = useState<string>("");
-  const [swarakshaContract, setSwarakshaContract] =
-    useState<ethers.Contract | null>(null);
-  const [isWhitelistedState, setIsWhitelistedState] = useState<boolean>(false);
-  const [isMounted, setIsMounted] = useState<boolean>(false); // ✅ Added mounting state
-
-  const contractAddress = "0xA40086386174Cb0DcA5C34f619E8960dFF3a21f1";
-  const contractABI = abi;
-
+  const backendURL = "http://localhost:8000"; // Backend API URL
   const router = useRouter();
 
-  // ✅ Handle mounting
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
+  // ======================================
+  // NO WALLET CONNECTION NEEDED
+  // Backend handles all blockchain transactions using relayer account
+  // ======================================
 
-  // ✅ Safe window access
-  const ethereum = typeof window !== "undefined" ? window.ethereum : undefined;
-
-  // -------------------------
-  // Initialize contract
-  // -------------------------
-  useEffect(() => {
-    const initContract = async () => {
-      if (!ethereum || !currentAccount) return;
-      try {
-        const provider = new ethers.BrowserProvider(ethereum);
-        const signer = await provider.getSigner();
-        const contract = new ethers.Contract(
-          contractAddress,
-          contractABI,
-          signer
-        );
-        setSwarakshaContract(contract);
-      } catch (err) {
-        console.error("Contract init error:", err);
-      }
-    };
-    initContract();
-  }, [ethereum, currentAccount]);
-
-  // -------------------------
-  // Wallet check on load
-  // -------------------------
-  useEffect(() => {
-    if (!isMounted || !ethereum) return; // ✅ Check if mounted
-
-    const handleChainChanged = () => window.location.reload();
-
-    const checkWallet = async () => {
-      try {
-        const accounts = (await ethereum.request({
-          method: "eth_accounts",
-        })) as string[];
-        setCurrentAccount(accounts[0] || "");
-        const chain = (await ethereum.request({
-          method: "eth_chainId",
-        })) as string;
-        setChainId(chain);
-      } catch (err) {
-        console.error(err);
-      }
-    };
-
-    checkWallet();
-    ethereum?.on?.("chainChanged", handleChainChanged);
-
-    return () => {
-      ethereum?.removeListener?.("chainChanged", handleChainChanged);
-    };
-  }, [ethereum, isMounted]); // ✅ Added isMounted dependency
-
-  // -------------------------
-  // Connect wallet
-  // -------------------------
+  // Stub functions for backward compatibility
   const connectWallet = async () => {
-    if (!ethereum) return alert("Install MetaMask!");
-    try {
-      const accounts = (await ethereum.request({
-        method: "eth_requestAccounts",
-      })) as string[];
-      setCurrentAccount(accounts[0]);
-    } catch (err) {
-      console.error(err);
-    }
+    console.log("⚠️ Wallet connection not needed - backend handles blockchain");
   };
 
-  // -------------------------
-  // Switch network to Celo Alfajores
-  // -------------------------
-  const switchNetwork = async () => {
-    if (!ethereum) return;
-    try {
-      await ethereum.request({
-        method: "wallet_switchEthereumChain",
-        params: [{ chainId: "0x221" }],
-      });
-    } catch (err) {
-      console.error("Network switch error:", err);
-    }
-  };
-
-  useEffect(() => {
-    if (chainId !== "0x221" && currentAccount) switchNetwork();
-  }, [chainId, currentAccount]);
-
-  // -------------------------
-  // Whitelist helpers
-  // -------------------------
-  // const isWhitelisted = useCallback(
-  //   async (userAddress: string) => {
-  //     if (!swarakshaContract) return false;
-  //     try {
-  //       return await swarakshaContract.isWhitelisted(userAddress);
-  //     } catch (err) {
-  //       console.error(err);
-  //       return false;
-  //     }
-  //   },
-  //   [swarakshaContract]
-  // );
-
-  // const whitelistAddress = useCallback(async () => {
-  //   if (!swarakshaContract || !currentAccount) return;
-  //   try {
-  //     const tx = await swarakshaContract.addUserToWhitelist(currentAccount);
-  //     await tx.wait();
-  //     setIsWhitelistedState(true);
-  //   } catch (err) {
-  //     console.error("Whitelist error:", err);
-  //   }
-  // }, [swarakshaContract, currentAccount]);
-
-  // function addReport(
-  //       uint256 _caseId,
-  //       string memory _title,
-  //       string memory _description,
-  //       string memory _fullText,
-  //       string memory _location,
-  //       string[] memory _images,
-  //       string memory _severity,
-  //       string memory _pincode
   const addReport = async (
     title: string,
     description: string,
@@ -179,213 +46,102 @@ export const SwarProvider: React.FC<{ children: React.ReactNode }> = ({
     severity: string,
     pincode: string
   ) => {
-    if (!swarakshaContract || !currentAccount) {
-      console.error("Contract or account not available");
-      alert("Please connect your wallet first");
-      return;
-    }
-
-    try {
-      console.log("📝 Submitting report to blockchain...");
-      console.log("Report data:", { title, description, location, latitude, longitude, image, severity, pincode });
-      
-      const tx = await swarakshaContract.addReport(
-        title,
-        description,
-        fullText,
-        location,
-        latitude,
-        longitude,
-        image,
-        severity,
-        pincode
-      );
-      
-      console.log("⏳ Waiting for transaction confirmation...");
-      const receipt = await tx.wait();
-      console.log("✅ Report added successfully! Tx:", receipt.hash);
-      alert("Report submitted successfully! 🎉");
-      return receipt;
-    } catch (err: any) {
-      console.error("❌ Add report error:", err);
-      
-      // Better error messages
-      if (err.code === "ACTION_REJECTED") {
-        alert("Transaction was rejected by user");
-      } else if (err.message?.includes("insufficient funds")) {
-        alert("Insufficient funds for gas fees. Please get some CELO test tokens.");
-      } else {
-        alert(`Error submitting report: ${err.message || "Unknown error"}`);
-      }
-      throw err;
-    }
+    console.log("⚠️ This function is deprecated - use /testify page with MongoDB + Blockchain backend");
   };
 
   const getReportById = async (caseId: number): Promise<Report> => {
-    const report = await swarakshaContract?.getReportById(caseId);
-    return {
-      caseId: Number(report.caseId),
-      title: report.title,
-      description: report.description,
-      fullText: report.fullText,
-      location: report.location,
-      latitude: report.latitude,
-      longitude: report.longitude,
-      image: report.image,
-      severity: report.severity,
-      pincode: report.pincode,
-      timestamp: Number(report.timestamp),
-      userAddress: report.userAddress,
-    };
+    try {
+      console.log("📊 Fetching report by ID:", caseId);
+      const response = await fetch(`${backendURL}/api/incidents/${caseId}?_t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+        },
+      });
+      const data = await response.json();
+      console.log("✅ Fetched report:", data);
+      return data || {
+        caseId: 0,
+        title: "",
+        description: "",
+        fullText: "",
+        location: "",
+        latitude: "",
+        longitude: "",
+        image: "",
+        severity: "",
+        pincode: "",
+        timestamp: 0,
+        userAddress: "",
+      };
+    } catch (error) {
+      console.error("❌ Error fetching report:", error);
+      return {
+        caseId: 0,
+        title: "",
+        description: "",
+        fullText: "",
+        location: "",
+        latitude: "",
+        longitude: "",
+        image: "",
+        severity: "",
+        pincode: "",
+        timestamp: 0,
+        userAddress: "",
+      };
+    }
   };
 
   const whitelistAddress = async () => {
-    console.log("🔥 DEV MODE: Whitelisting address:", currentAccount);
-
-    // Check if we have the required env variables
-    if (
-      !process.env.NEXT_PUBLIC_APP_RPC_URL ||
-      !process.env.NEXT_PUBLIC_APP_PRIVATE_KEY ||
-      process.env.NEXT_PUBLIC_APP_PRIVATE_KEY === "0xyour_private_key_here"
-    ) {
-      console.warn("⚠️ RPC URL or private key not configured - skipping actual whitelist");
-      console.log("✅ Proceeding anyway (dev mode bypass)");
-      return; // Just skip whitelisting in dev mode
-    }
-
-    try {
-      // Provider + wallet
-      const provider = new JsonRpcProvider(process.env.NEXT_PUBLIC_APP_RPC_URL);
-      const wallet = new Wallet(
-        process.env.NEXT_PUBLIC_APP_PRIVATE_KEY,
-        provider
-      );
-
-      // Contract instance
-      const contract = new ethers.Contract(contractAddress, abi, wallet);
-
-      // Make sure currentAccount is a valid Ethereum address
-      if (!ethers.isAddress(currentAccount)) {
-        throw new Error("Invalid Ethereum address provided");
-      }
-
-      const tx = await contract.addUserToWhitelist(currentAccount);
-      const receipt = await tx.wait(); // waits for 1 confirmation
-      console.log("✅ Address whitelisted, tx hash:", receipt.transactionHash);
-    } catch (err) {
-      console.error("Whitelist error:", err);
-      console.log("Continuing anyway (dev mode)");
-    }
+    console.log("⚠️ Whitelisting not needed - backend handles access");
   };
 
   const isWhitelistedFunc = async (userAddress: string) => {
-    if (!swarakshaContract) return false;
-    try {
-      return await swarakshaContract.isWhitelisted(userAddress);
-    } catch (err) {
-      console.error(err);
-      return false;
-    }
+    console.log("⚠️ Whitelist check not needed - backend handles access");
+    return true; // Everyone can submit
   };
 
-  useEffect(() => {
-    const isWhitelistedFunc = async (userAddress: string) => {
-      if (!swarakshaContract) return false;
-      try {
-        return await swarakshaContract.isWhitelisted(userAddress);
-      } catch (err) {
-        console.error(err);
-        return false;
-      }
-    };
-
-    const fetchWhitelistStatus = async () => {
-      if (!currentAccount) return;
-      // const res = await isWhitelisted(currentAccount);
-      const res = await isWhitelistedFunc(currentAccount);
-
-      // 🔥 BYPASS: Auto-whitelist for development - skip Self Protocol verification
-      if (!res && currentAccount) {
-        console.log('🔥 DEV MODE: Auto-whitelisting user (bypassing Self Protocol)');
-        try {
-          await whitelistAddress();
-          setIsWhitelistedState(true);
-        } catch (err) {
-          console.log('Auto-whitelist failed, but continuing anyway for dev mode');
-          setIsWhitelistedState(true); // Force whitelist for dev
-        }
-      } else {
-        setIsWhitelistedState(res);
-      }
-    };
-    fetchWhitelistStatus();
-  }, [currentAccount, swarakshaContract]); // ✅ Added swarakshaContract dependency
-
-  // ✅ Fixed navigation logic with proper mounting check
-  // 🔥 BYPASS: Skip Self Protocol verification route
-  useEffect(() => {
-    if (!isMounted) return; // Don't navigate until mounted
-
-    // Add small delay to ensure router is ready
-    console.log("Navigation check:", { currentAccount, isWhitelistedState });
-
-    const navigationTimer = setTimeout(() => {
-      if (!currentAccount) {
-        router.push("/connect");
-      } 
-      // 🔥 BYPASS: Removed self-login requirement - go directly to home
-      // else if (currentAccount && !isWhitelistedState) {
-      //   router.push("/self-login");
-      // } 
-      else {
-        router.push("/");
-      }
-    }, 100);
-
-    return () => clearTimeout(navigationTimer);
-  }, [currentAccount, isWhitelistedState, router, isMounted]);
-
-  // -------------------------
-  // Contract functions
-  // -------------------------
   const addUserToWhitelist = async (userAddress: string) => {
-    if (!swarakshaContract) return;
-    try {
-      const tx = await swarakshaContract.addUserToWhitelist(userAddress);
-      await tx.wait();
-      console.log("User added:", userAddress);
-    } catch (err) {
-      console.error(err);
-    }
+    console.log("⚠️ Whitelist management not needed - backend handles access");
   };
 
   const removeUserFromWhitelist = async (userAddress: string) => {
-    if (!swarakshaContract) return;
-    try {
-      const tx = await swarakshaContract.removeUserFromWhitelist(userAddress);
-      await tx.wait();
-      console.log("User removed:", userAddress);
-    } catch (err) {
-      console.error(err);
-    }
+    console.log("⚠️ Whitelist management not needed - backend handles access");
   };
 
   const getReportsByUser = async (userAddress: string) => {
-    if (!swarakshaContract) return [];
     try {
-      return await swarakshaContract.getReportsByUser(userAddress);
-    } catch (err) {
-      console.error(err);
+      console.log("📊 Fetching reports for user:", userAddress);
+      const response = await fetch(`${backendURL}/api/incidents/list?_t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+        },
+      });
+      const data = await response.json();
+      console.log("✅ Fetched reports from backend:", data);
+      return data.incidents || [];
+    } catch (error) {
+      console.error("❌ Error fetching reports:", error);
       return [];
     }
   };
 
   const getAllReports = async () => {
-    if (!swarakshaContract) return [];
     try {
-      return await swarakshaContract.getAllReports();
-    } catch (err) {
-      console.error(err);
+      console.log("📊 Fetching all reports from backend API...");
+      const response = await fetch(`${backendURL}/api/incidents/list?_t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+        },
+      });
+      const data = await response.json();
+      console.log("✅ Fetched reports from backend:", data);
+      return data.incidents || [];
+    } catch (error) {
+      console.error("❌ Error fetching reports:", error);
       return [];
     }
   };
@@ -393,7 +149,7 @@ export const SwarProvider: React.FC<{ children: React.ReactNode }> = ({
   return (
     <SwarContext.Provider
       value={{
-        currentAccount,
+        currentAccount: "", // No account needed
         connectWallet,
         backendURL,
         addUserToWhitelist,
@@ -402,7 +158,7 @@ export const SwarProvider: React.FC<{ children: React.ReactNode }> = ({
         getReportsByUser,
         getAllReports,
         whitelistAddress,
-        isWhitelistedFunc, // ✅ Added to context for easier access
+        isWhitelistedFunc,
         getReportById,
       }}
     >

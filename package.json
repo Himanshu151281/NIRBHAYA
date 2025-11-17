@@ -1,0 +1,16 @@
+{
+  "name": "nirbhaya-blockchain",
+  "version": "1.0.0",
+  "description": "NIRBHAYA incident reporting with MongoDB and blockchain",
+  "scripts": {
+    "deploy:local": "npx hardhat run scripts/deploy_local.js --network localhost",
+    "deploy:sepolia": "npx hardhat run scripts/deploy_sepolia.js --network sepolia"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+    "hardhat": "^2.19.4"
+  },
+  "dependencies": {
+    "dotenv": "^16.3.1"
+  }
+}

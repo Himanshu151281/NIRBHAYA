@@ -3,10 +3,10 @@
 import Nav from "@/components/custom/Nav"; // adjust path based on your structure
 import { useNirbhaya } from "@/utils/useSwarContext";
 import { useRouter } from "next/navigation"; // ✅ useRouter instead of useNavigate
-import { PinataSDK } from "pinata";
 import { useEffect, useRef, useState } from "react";
 import Map, { Marker } from "react-map-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
+import { api } from "@/lib/api";
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
 
@@ -33,12 +33,6 @@ export default function ReportIncident() {
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  // ✅ In Next.js, use NEXT_PUBLIC_ for client env vars
-  const pinata = new PinataSDK({
-    pinataJwt: process.env.NEXT_PUBLIC_PINATA_JWT!,
-    pinataGateway: "coral-light-cicada-276.mypinata.cloud",
-  });
 
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
@@ -268,20 +262,41 @@ export default function ReportIncident() {
     try {
       setIsLoading(true);
 
-      console.log("📤 Starting image upload to IPFS...");
-      const uploadedHashes: string[] = [];
+      console.log("📤 Uploading to MongoDB + Blockchain...");
 
-      for (const photo of photos) {
-        console.log(`Uploading ${photo.name}...`);
-        const response = await pinata.upload.public.file(photo);
-        uploadedHashes.push(response.cid ?? "");
+      // Create form data
+      const formData = new FormData();
+      
+      // Add all photos
+      photos.forEach((photo) => {
+        formData.append('images', photo);
+      });
+      
+      // Add metadata
+      formData.append('title', description.substring(0, 100));
+      formData.append('description', description);
+      formData.append('location', JSON.stringify({
+        lat: location.lat,
+        lng: location.lng,
+        address: `${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}`
+      }));
+      formData.append('severity', 'Medium');
+      formData.append('reporter_address', '0x0000000000000000000000000000000000000000');
+
+      // Submit using API utility
+      const result = await api.submitIncident(formData);
+      console.log("✅ Backend response:", result);
+
+      if (!result.success) {
+        throw new Error(result.message || 'Submission failed');
       }
 
-      console.log("✅ Uploaded image IPFS hashes:", uploadedHashes);
-
-      // Create report data
+      // Create report data for local storage
       const reportData = {
-        id: Date.now(),
+        id: result.incident_id,
+        mongodb_id: result.mongodb_id,
+        blockchain_tx: result.blockchain_tx,
+        combined_hash: result.combined_hash,
         title: description.substring(0, 50) + (description.length > 50 ? "..." : ""),
         description: description,
         location: {
@@ -289,8 +304,7 @@ export default function ReportIncident() {
           lng: location.lng,
           address: `${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}`
         },
-        images: uploadedHashes,
-        severity: "Medium", // Default severity
+        severity: "Medium",
         timestamp: Date.now(),
         date: new Date().toLocaleDateString("en-GB", {
           day: "2-digit",
@@ -305,7 +319,7 @@ export default function ReportIncident() {
       const existingReports = JSON.parse(localStorage.getItem("incident_reports") || "[]");
       
       // Add new report
-      existingReports.unshift(reportData); // Add to beginning
+      existingReports.unshift(reportData);
       
       // Save back to local storage
       localStorage.setItem("incident_reports", JSON.stringify(existingReports));
@@ -313,7 +327,18 @@ export default function ReportIncident() {
       console.log("✅ Report saved successfully!");
       console.log("📊 Total reports:", existingReports.length);
       
-      alert(`Report submitted successfully! 🎉\n\nYour incident has been recorded with location:\nLat: ${location.lat.toFixed(6)}\nLng: ${location.lng.toFixed(6)}`);
+      // Build success message
+      let successMessage = `Report submitted successfully! 🎉\n\n✅ Stored in MongoDB: ${result.mongodb_id}\n`;
+      
+      if (result.blockchain_tx) {
+        successMessage += `✅ Blockchain TX: ${result.blockchain_tx.substring(0, 20)}...\n`;
+      } else {
+        successMessage += `⚠️  Blockchain TX: Not submitted (check Ganache)\n`;
+      }
+      
+      successMessage += `✅ Hash: ${result.combined_hash.substring(0, 20)}...`;
+      
+      alert(successMessage);
       
       // Reset form
       setPhotos([]);
@@ -326,7 +351,7 @@ export default function ReportIncident() {
 
     } catch (err) {
       console.log("❌ Error submitting report:", err);
-      alert("Failed to submit report. Please check your connection and try again.");
+      alert(`Failed to submit report: ${err instanceof Error ? err.message : 'Unknown error'}\n\nPlease check:\n- Backend is running (http://localhost:8000)\n- MongoDB is connected\n- Ganache is running`);
       setIsLoading(false);
     }
   };
