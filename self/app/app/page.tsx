@@ -24,12 +24,10 @@ export default function HomePage() {
   // }, [currentAccount, router]);
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="fixed top-0 left-0 right-0 z-50">
-        <Nav />
-      </div>
+    <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-pink-100">
+      <Nav />
 
-      <main className="pt-25">
+      <main>
         <HeroSection />
         <QuickActions />
         <FeatureHighlights />

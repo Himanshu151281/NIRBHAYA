@@ -6,28 +6,28 @@ const features = [
     title: "AI-Powered Safety",
     description: "Our AI identifies danger zones and suggests safer paths.",
     icon: Brain,
-    color: "text-accent",
+    color: "text-purple-600",
   },
   {
     title: "Verified & Secure",
     description:
       "All reports are stored on-chain and verifiable via Self Passport zkID.",
     icon: ShieldCheck,
-    color: "text-primary",
+    color: "text-pink-600",
   },
   {
     title: "Community Driven",
     description: "Join a network of women supporting each other's safety.",
     icon: Users,
-    color: "text-secondary",
+    color: "text-purple-500",
   },
 ];
 
 export default function FeatureHighlights() {
   return (
-    <section className="py-16 px-4">
+    <section className="py-16 px-4 bg-white/50 backdrop-blur-sm">
       <div className="container max-w-6xl mx-auto">
-        <h2 className="text-2xl md:text-3xl font-bold text-center mb-12 text-foreground">
+        <h2 className="text-3xl md:text-4xl font-bold text-center mb-12 text-gray-900">
           How It Works
         </h2>
 
@@ -37,20 +37,20 @@ export default function FeatureHighlights() {
             return (
               <Card
                 key={index}
-                className="text-center border-border/50 hover:shadow-md transition-shadow duration-200"
+                className="text-center border-purple-100 hover:shadow-xl hover:scale-105 transition-all duration-200 bg-white"
               >
                 <CardContent className="p-8">
                   <div className="flex justify-center mb-6">
-                    <div className="p-4 rounded-full bg-muted">
+                    <div className="p-4 rounded-full bg-gradient-to-br from-purple-100 to-pink-100">
                       <Icon className={`h-10 w-10 ${feature.color}`} />
                     </div>
                   </div>
 
-                  <h3 className="text-xl font-semibold mb-4 text-foreground">
+                  <h3 className="text-xl font-semibold mb-4 text-gray-900">
                     {feature.title}
                   </h3>
 
-                  <p className="text-muted-foreground leading-relaxed">
+                  <p className="text-gray-600 leading-relaxed">
                     {feature.description}
                   </p>
                 </CardContent>

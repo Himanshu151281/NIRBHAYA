@@ -1,80 +1,142 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { AlertTriangle, Camera, MapPin, Shield } from "lucide-react";
+import { AlertTriangle, Camera, Shield, Bell } from "lucide-react";
+import Link from "next/link";
 
 const actions = [
   {
     id: "sos",
     title: "SOS Alert",
-    description: "Send instant alert to trusted contacts with location",
+    description: "Send instant alert to trusted contacts with your live location",
     icon: AlertTriangle,
-    variant: "destructive" as const,
-    emoji: "🔴",
+    href: "/sos",
+    gradient: "from-red-500 to-red-600",
+    emoji: "🆘",
   },
   {
     id: "report",
     title: "Report Incident",
-    description:
-      "Upload photo/video, describe the situation, and save locally",
+    description: "Upload photo/video evidence with AI verification",
     icon: Camera,
-    variant: "default" as const,
+    href: "/testify",
+    gradient: "from-purple-600 to-pink-600",
     emoji: "📸",
   },
   {
     id: "route",
-    title: "Safe Route Planner",
-    description: "View incident map and plan the safest route to your destination",
+    title: "Safe Route",
+    description: "Plan safest path with real-time danger zone avoidance",
     icon: Shield,
-    variant: "default" as const,
+    href: "/search-location",
+    gradient: "from-blue-500 to-cyan-500",
     emoji: "🛡️",
+  },
+  {
+    id: "alert",
+    title: "Set Alert Zone",
+    description: "Get notified when entering high-risk areas",
+    icon: Bell,
+    href: "/alerts",
+    gradient: "from-orange-500 to-amber-500",
+    emoji: "🔔",
   },
 ];
 
 export default function QuickActions() {
   return (
-    <section className="py-12 px-4 bg-muted/30">
-      <div className="container max-w-6xl mx-auto">
-        <h2 className="text-2xl md:text-3xl font-bold text-center mb-8 text-foreground">
-          Quick Actions
-        </h2>
+    <section className="py-20 px-4 relative">
+      {/* Background Pattern */}
+      <div className="absolute inset-0 opacity-10">
+        <div className="absolute inset-0" style={{
+          backgroundImage: `radial-gradient(circle at 2px 2px, rgba(139, 92, 246, 0.3) 1px, transparent 0)`,
+          backgroundSize: '40px 40px'
+        }} />
+      </div>
 
+      <div className="container max-w-7xl mx-auto relative z-10">
+        {/* Section Header */}
+        <div className="text-center mb-16">
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/80 backdrop-blur-sm border border-purple-200 shadow-lg mb-4">
+            <span className="text-sm font-bold text-purple-600">⚡ Quick Actions</span>
+          </div>
+          <h2 className="text-4xl md:text-5xl font-black text-gray-900 mb-4">
+            Stay Protected in{" "}
+            <span className="bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+              Seconds
+            </span>
+          </h2>
+          <p className="text-xl text-gray-600 max-w-2xl mx-auto">
+            One-tap access to life-saving features powered by AI and blockchain
+          </p>
+        </div>
+
+        {/* Action Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {actions.map((action) => {
+          {actions.map((action, index) => {
             const Icon = action.icon;
             return (
-              <Card
-                key={action.id}
-                className="group hover:shadow-lg transition-all duration-200 border-border/50 rounded-xl"
-              >
-                <CardContent className="p-6 text-center">
-                  <div className="flex justify-center mb-4">
-                    <div className="p-3 rounded-2xl bg-card group-hover:scale-110 transition-transform duration-200">
-                      <Icon className="h-8 w-8 text-primary" />
+              <Link key={action.id} href={action.href}>
+                <Card
+                  className="group relative h-full border-2 border-transparent hover:border-purple-200 rounded-3xl bg-white overflow-hidden transition-all duration-300 hover:shadow-2xl hover:scale-105 cursor-pointer"
+                  style={{
+                    animationDelay: `${index * 100}ms`,
+                  }}
+                >
+                  {/* Gradient Background on Hover */}
+                  <div className={`absolute inset-0 bg-gradient-to-br ${action.gradient} opacity-0 group-hover:opacity-5 transition-opacity duration-300`} />
+                  
+                  <CardContent className="p-8 relative">
+                    {/* Icon with Animated Background */}
+                    <div className="flex justify-center mb-6">
+                      <div className="relative">
+                        <div className={`absolute inset-0 bg-gradient-to-br ${action.gradient} rounded-3xl blur-xl opacity-50 group-hover:opacity-75 transition-opacity`} />
+                        <div className={`relative p-5 rounded-3xl bg-gradient-to-br ${action.gradient} shadow-xl group-hover:scale-110 transition-transform duration-300`}>
+                          <Icon className="h-10 w-10 text-white" />
+                        </div>
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="flex items-center justify-center gap-2 mb-2">
-                    <span className="text-2xl">{action.emoji}</span>
-                    <h3 className="font-semibold text-foreground">
-                      {action.title}
-                    </h3>
-                  </div>
+                    {/* Title with Emoji */}
+                    <div className="flex items-center justify-center gap-3 mb-3">
+                      <span className="text-3xl group-hover:scale-110 transition-transform">
+                        {action.emoji}
+                      </span>
+                      <h3 className="font-black text-xl text-gray-900">
+                        {action.title}
+                      </h3>
+                    </div>
 
-                  <p className="text-sm text-muted-foreground mb-4 leading-relaxed">
-                    {action.description}
-                  </p>
+                    {/* Description */}
+                    <p className="text-sm text-gray-600 text-center leading-relaxed mb-6">
+                      {action.description}
+                    </p>
 
-                  <Button
-                    variant={action.variant}
-                    className="w-full rounded-xl"
-                    size="sm"
-                  >
-                    {action.title}
-                  </Button>
-                </CardContent>
-              </Card>
+                    {/* Action Button */}
+                    <Button
+                      className={`w-full rounded-2xl bg-gradient-to-r ${action.gradient} text-white font-bold shadow-lg group-hover:shadow-2xl transition-all duration-300`}
+                    >
+                      <span className="group-hover:scale-110 inline-block transition-transform">
+                        Get Started →
+                      </span>
+                    </Button>
+
+                    {/* Corner Accent */}
+                    <div className="absolute top-4 right-4 w-3 h-3 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </CardContent>
+                </Card>
+              </Link>
             );
           })}
+        </div>
+
+        {/* Bottom CTA */}
+        <div className="mt-16 text-center">
+          <p className="text-gray-600 mb-6">
+            Need help or have questions?
+          </p>
+          <Button className="rounded-full px-8 py-6 text-lg font-bold bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-2xl hover:shadow-purple-500/50 hover:scale-105 transition-all duration-300">
+            Contact Support 24/7
+          </Button>
         </div>
       </div>
     </section>

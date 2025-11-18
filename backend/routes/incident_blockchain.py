@@ -15,8 +15,20 @@ from web3 import Web3
 from eth_account import Account
 from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
+import google.generativeai as genai
+from PIL import Image
+import io
 
 load_dotenv()
+
+# Configure Gemini AI
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+    gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+else:
+    print("Warning: GEMINI_API_KEY not set - AI verification disabled")
+    gemini_model = None
 
 router = APIRouter(prefix="/api/incidents", tags=["Incidents & Blockchain"])
 
@@ -70,6 +82,95 @@ contract = w3.eth.contract(address=CONTRACT_ADDRESS, abi=CONTRACT_ABI) if CONTRA
 
 
 # Helper Functions
+async def verify_incident_with_ai(image_bytes: bytes, title: str, description: str, severity: str) -> dict:
+    """
+    Verify if the uploaded image is a valid incident using Gemini AI
+    Returns: {"is_valid": bool, "reason": str, "confidence": str}
+    """
+    if not gemini_model:
+        # AI verification disabled - allow all submissions
+        return {
+            "is_valid": True,
+            "reason": "AI verification disabled (GEMINI_API_KEY not set)",
+            "confidence": "N/A"
+        }
+    
+    try:
+        # Convert bytes to PIL Image
+        image = Image.open(io.BytesIO(image_bytes))
+        
+        # Create verification prompt with context
+        prompt = f"""You are an AI safety inspector for a women's safety app called NIRBHAYA.
+
+Analyze this image to determine if it shows a valid safety incident/hazard.
+
+Incident Details:
+- Title: {title}
+- Description: {description}
+- Severity Level: {severity}
+
+Valid incidents include:
+- Harassment or assault situations
+- Unsafe areas (dark alleys, broken streetlights, deserted places)
+- Suspicious activities or individuals
+- Accidents or emergency situations
+- Infrastructure hazards (broken roads, unsafe buildings)
+- Any situation that poses a threat to women's safety
+
+Invalid submissions include:
+- Random selfies or personal photos
+- Food, pets, nature photos
+- Screenshots of text or social media
+- Memes or jokes
+- Unrelated content
+
+Respond in JSON format:
+{{
+  "is_valid": true/false,
+  "reason": "Brief explanation (max 100 chars)",
+  "confidence": "high/medium/low"
+}}
+
+Be strict but fair. Consider the context provided in title and description."""
+        
+        # Generate AI response
+        response = gemini_model.generate_content([prompt, image])
+        response_text = response.text.strip()
+        
+        # Parse JSON response
+        # Remove markdown code blocks if present
+        if "```json" in response_text:
+            response_text = response_text.split("```json")[1].split("```")[0].strip()
+        elif "```" in response_text:
+            response_text = response_text.split("```")[1].split("```")[0].strip()
+        
+        result = json.loads(response_text)
+        
+        print(f"\n🤖 AI Verification Result:")
+        print(f"   Valid: {result.get('is_valid', False)}")
+        print(f"   Reason: {result.get('reason', 'No reason provided')}")
+        print(f"   Confidence: {result.get('confidence', 'unknown')}\n")
+        
+        return result
+        
+    except json.JSONDecodeError as e:
+        print(f"⚠️ AI response parsing error: {e}")
+        print(f"   Raw response: {response_text[:200]}...")
+        # If AI fails to parse, default to allowing submission with warning
+        return {
+            "is_valid": True,
+            "reason": "AI verification inconclusive - manual review recommended",
+            "confidence": "low"
+        }
+    except Exception as e:
+        print(f"❌ AI verification error: {str(e)}")
+        # On error, default to allowing submission
+        return {
+            "is_valid": True,
+            "reason": f"AI verification failed: {str(e)[:50]}",
+            "confidence": "error"
+        }
+
 def compute_combined_hash(image_bytes: bytes, metadata_dict: dict) -> str:
     """Compute SHA-256 hash of image + metadata"""
     metadata_str = json.dumps(metadata_dict, sort_keys=True)
@@ -109,7 +210,7 @@ async def submit_incident(
     reporter_address: str = Form("0x0000000000000000000000000000000000000000")
 ):
     """
-    Submit incident: Store in MongoDB + Submit hash to blockchain
+    Submit incident: AI verification + Store in MongoDB + Submit hash to blockchain
     """
     try:
         # Parse location
@@ -118,9 +219,15 @@ async def submit_incident(
         # Step 1: Read and store images
         image_data_list = []
         all_images_bytes = b""
+        first_image_bytes = None
         
-        for image in images:
+        for idx, image in enumerate(images):
             image_bytes = await image.read()
+            
+            # Store first image for AI verification
+            if idx == 0:
+                first_image_bytes = image_bytes
+            
             # Convert to base64 for MongoDB storage
             image_base64 = base64.b64encode(image_bytes).decode('utf-8')
             image_data_list.append({
@@ -130,7 +237,37 @@ async def submit_incident(
             })
             all_images_bytes += image_bytes
         
-        # Step 2: Create metadata
+        # Step 2: AI VERIFICATION - Validate incident authenticity
+        print(f"\n🔍 STEP 2: AI VERIFICATION")
+        print(f"   Title: {title}")
+        print(f"   Description: {description}")
+        print(f"   Severity: {severity}")
+        
+        if first_image_bytes:
+            ai_result = await verify_incident_with_ai(
+                first_image_bytes, 
+                title, 
+                description, 
+                severity
+            )
+            
+            # Reject submission if AI determines it's invalid
+            if not ai_result.get("is_valid", False):
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": "INVALID_INCIDENT",
+                        "message": "Doesn't look like a valid incident",
+                        "reason": ai_result.get("reason", "Image doesn't match incident criteria"),
+                        "confidence": ai_result.get("confidence", "unknown")
+                    }
+                )
+            
+            print(f"✅ AI Verification PASSED")
+            print(f"   Reason: {ai_result.get('reason')}")
+            print(f"   Confidence: {ai_result.get('confidence')}")
+        
+        # Step 3: Create metadata
         metadata = {
             "title": title,
             "description": description,
@@ -138,13 +275,15 @@ async def submit_incident(
             "severity": severity,
             "reporter_address": reporter_address,
             "timestamp": datetime.utcnow().isoformat(),
-            "date": datetime.utcnow().strftime("%d %b %Y")
+            "date": datetime.utcnow().strftime("%d %b %Y"),
+            "ai_verified": True if first_image_bytes else False,
+            "ai_confidence": ai_result.get("confidence", "N/A") if first_image_bytes else "N/A"
         }
         
-        # Step 3: Compute combined hash
+        # Step 4: Compute combined hash
         combined_hash = compute_combined_hash(all_images_bytes, metadata)
         
-        # Step 4: Store in MongoDB
+        # Step 5: Store in MongoDB
         incident_doc = {
             "images": image_data_list,
             "metadata": metadata,
@@ -300,14 +439,36 @@ async def list_incidents(limit: int = 50, skip: int = 0):
         incidents = []
         
         async for doc in cursor:
-            # Remove binary image data for list view
+            # Convert images to data URLs for display
+            images = []
+            for img in doc.get("images", []):
+                images.append(f"data:{img['content_type']};base64,{img['data']}")
+            
             incident = {
                 "id": str(doc["_id"]),
+                "_id": str(doc["_id"]),
                 "metadata": doc["metadata"],
+                "images": images,  # Include images in list view
                 "combined_hash": doc.get("combined_hash"),
                 "blockchain_tx": doc.get("blockchain_tx"),
+                "blockchain_submitted": doc.get("blockchain_submitted", False),
+                "blockchain_incident_id": doc.get("blockchain_incident_id"),
                 "created_at": doc["created_at"].isoformat() if "created_at" in doc else None,
-                "image_count": len(doc.get("images", []))
+                "timestamp": doc["created_at"].isoformat() if "created_at" in doc else None,
+                "image_count": len(images),
+                # Include metadata fields at top level for easier access
+                "title": doc["metadata"].get("title"),
+                "description": doc["metadata"].get("description"),
+                "incident_type": doc["metadata"].get("incident_type"),
+                "severity": doc["metadata"].get("severity"),
+                "address": doc["metadata"].get("address"),
+                "location": {
+                    "coordinates": [
+                        doc["metadata"].get("location", {}).get("lng", 0),
+                        doc["metadata"].get("location", {}).get("lat", 0)
+                    ],
+                    "address": doc["metadata"].get("location", {}).get("address") or doc["metadata"].get("address")
+                }
             }
             incidents.append(incident)
         

@@ -29,6 +29,20 @@ export const api = {
     });
     
     if (!response.ok) {
+      // Parse error response for AI validation failures
+      const errorData = await response.json().catch(() => null);
+      
+      // Check if it's an AI validation error
+      if (response.status === 400 && errorData?.detail?.error === 'INVALID_INCIDENT') {
+        const error = new Error(errorData.detail.message || "Invalid incident submission");
+        // Attach additional error details
+        (error as any).isAIRejection = true;
+        (error as any).aiReason = errorData.detail.reason;
+        (error as any).aiConfidence = errorData.detail.confidence;
+        throw error;
+      }
+      
+      // Generic error for other cases
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     

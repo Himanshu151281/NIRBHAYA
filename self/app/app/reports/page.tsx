@@ -33,13 +33,13 @@ function Reports() {
 
   const { getAllReports } = context;
 
-  // Start with empty array - no mock data
+  // State declarations
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // Mock data initially (only shown if backend fails)
+  // Mock data (fallback if backend fails)
   const mockIncidents: Report[] = [
     {
       caseId: 1,
@@ -86,27 +86,58 @@ function Reports() {
     },
   ];
 
-  const [reports, setReports] = useState<Report[]>(mockIncidents);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
   // Fetch real reports and replace mock data
   useEffect(() => {
     const fetchReports = async () => {
       try {
         setLoading(true);
         setError(null);
-        console.log("📊 Fetching all reports from blockchain...");
-        const allReports: Report[] = await getAllReports();
-        console.log("✅ Fetched reports:", allReports);
-        if (allReports && allReports.length > 0) {
-          setReports(allReports);
+        console.log("📊 Fetching all reports from backend API...");
+        
+        // Fetch directly from backend API
+        const response = await fetch(`http://localhost:8000/api/incidents/list?limit=100&_t=${Date.now()}`, {
+          cache: 'no-store',
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+          },
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        const incidents = data.incidents || [];
+        
+        console.log("✅ Fetched incidents from API:", incidents);
+        
+        if (incidents && incidents.length > 0) {
+          // Map MongoDB incidents to Report format
+          const mappedReports: Report[] = incidents.map((incident: any, index: number) => ({
+            caseId: index + 1,
+            title: incident.title || incident.metadata?.title || "Incident Report",
+            description: incident.description || incident.metadata?.description || "No description",
+            fullText: incident.metadata?.details || "",
+            location: incident.address || incident.metadata?.address || "Unknown Location",
+            latitude: incident.location?.coordinates?.[1]?.toString() || incident.metadata?.location?.coordinates?.[1]?.toString() || "0",
+            longitude: incident.location?.coordinates?.[0]?.toString() || incident.metadata?.location?.coordinates?.[0]?.toString() || "0",
+            image: incident.images?.[0] || "",
+            severity: incident.severity || incident.metadata?.severity || "Medium",
+            pincode: incident.metadata?.pincode || "000000",
+            timestamp: incident.created_at ? new Date(incident.created_at).getTime() / 1000 : Date.now() / 1000,
+            userAddress: incident.metadata?.reporter_id || "Anonymous",
+            type: incident.incident_type || incident.metadata?.incident_type || "General"
+          }));
+          
+          console.log("🗺️ Mapped reports for display:", mappedReports);
+          setReports(mappedReports);
         } else {
           console.log("ℹ️ No reports found, showing mock data");
+          // Keep mock data if no incidents
         }
       } catch (err) {
         console.error("Error fetching reports:", err);
-        setError("Failed to fetch reports. Showing mock data.");
+        setError("Failed to fetch reports from server. Showing mock data.");
         // Keep mock data on error
       } finally {
         setLoading(false);
@@ -114,25 +145,11 @@ function Reports() {
     };
 
     fetchReports();
-  }, [getAllReports]);
+  }, [refreshKey]); // Changed dependency to refreshKey instead of getAllReports
 
   // Manual refresh function
   const refreshReports = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      console.log("🔄 Manually refreshing reports...");
-      const allReports: Report[] = await getAllReports();
-      if (allReports && allReports.length > 0) {
-        setReports(allReports);
-        console.log("✅ Reports refreshed:", allReports.length);
-      }
-    } catch (err) {
-      console.error("Error refreshing reports:", err);
-      setError("Failed to refresh reports.");
-    } finally {
-      setLoading(false);
-    }
+    setRefreshKey(prev => prev + 1); // Trigger useEffect re-run
   };
 
   // Function to return severity badge styles
@@ -178,7 +195,7 @@ function Reports() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 py-12 px-4">
+      <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-pink-100 py-12 px-4">
         <div className="fixed top-0 left-0 right-0 z-50">
           <Nav />
         </div>
@@ -190,7 +207,7 @@ function Reports() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-12 px-4">
+    <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-pink-100 py-12 px-4">
       <div className="fixed top-0 left-0 right-0 z-50">
         <Nav />
       </div>
@@ -205,7 +222,7 @@ function Reports() {
             <button
               onClick={refreshReports}
               disabled={loading}
-              className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-400 transition"
+              className="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-full hover:shadow-xl disabled:bg-gray-400 transition-all duration-200 font-semibold"
               title="Refresh reports"
             >
               {loading ? "⏳" : "🔄"}
@@ -232,7 +249,7 @@ function Reports() {
                 href={`/report/${report.caseId}`}
                 className="block"
               >
-                <div className="p-6 bg-white rounded-xl shadow-sm border hover:shadow-md transition cursor-pointer">
+                <div className="p-6 bg-white rounded-2xl shadow-lg border-2 border-purple-100 hover:shadow-xl hover:scale-105 transition-all duration-200 cursor-pointer">
                   <div className="flex items-center justify-between">
                     <h2 className="text-xl font-semibold text-foreground">
                       {report.title}

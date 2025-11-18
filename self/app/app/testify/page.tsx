@@ -351,7 +351,18 @@ export default function ReportIncident() {
 
     } catch (err) {
       console.log("❌ Error submitting report:", err);
-      alert(`Failed to submit report: ${err instanceof Error ? err.message : 'Unknown error'}\n\nPlease check:\n- Backend is running (http://localhost:8000)\n- MongoDB is connected\n- Ganache is running`);
+      
+      // Check if it's an AI validation rejection
+      if (err instanceof Error && (err as any).isAIRejection) {
+        const aiReason = (err as any).aiReason || 'AI validation failed';
+        const aiConfidence = (err as any).aiConfidence || 'unknown';
+        
+        alert(`❌ ${err.message}\n\n🤖 AI Analysis: ${aiReason}\n📊 Confidence: ${aiConfidence}\n\nPlease upload a photo that shows an actual incident like:\n• Harassment or unsafe behavior\n• Dark or poorly lit areas\n• Suspicious activity\n• Accidents or emergencies\n• Infrastructure hazards\n\nAvoid uploading selfies, food photos, memes, or unrelated images.`);
+      } else {
+        // Generic error (network, server, etc.)
+        alert(`Failed to submit report: ${err instanceof Error ? err.message : 'Unknown error'}\n\nPlease check:\n- Backend is running (http://localhost:8000)\n- MongoDB is connected\n- Ganache is running`);
+      }
+      
       setIsLoading(false);
     }
   };
@@ -361,12 +372,12 @@ export default function ReportIncident() {
       <div className="fixed top-0 left-0 right-0 z-50">
         <Nav />
       </div>
-      <div className="mt-20 p-6 space-y-4 min-h-[80vh] flex flex-col items-center bg-background">
+      <div className="mt-20 p-6 space-y-4 min-h-[80vh] flex flex-col items-center bg-gradient-to-br from-pink-50 via-purple-50 to-pink-100">
         <div className="text-center space-y-1">
-          <h2 className="text-2xl md:text-3xl font-bold text-foreground">
+          <h2 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
             Report Incident
           </h2>
-          <p className="text-muted-foreground text-sm md:text-base">
+          <p className="text-gray-600 text-sm md:text-base">
             Upload photos and provide context 📝
           </p>
         </div>
@@ -379,17 +390,17 @@ export default function ReportIncident() {
             playsInline
             width={320}
             height={240}
-            className="rounded-lg shadow-md border border-border"
+            className="rounded-2xl shadow-xl border-2 border-purple-200"
           />
           <canvas ref={canvasRef} width={320} height={240} className="hidden" />
           <div className="flex gap-2 mt-2">
             <button
               onClick={capturePhoto}
-              className="bg-primary hover:bg-primary/90 text-primary-foreground px-4 py-2 rounded-lg shadow-sm"
+              className="bg-gradient-to-r from-purple-600 to-pink-600 hover:shadow-xl text-white px-6 py-3 rounded-full shadow-lg font-semibold transition-all duration-200 hover:scale-105"
             >
               Capture Photo
             </button>
-            <label className="bg-black hover:bg-black/70 text-primary-foreground px-4 py-2 rounded-lg cursor-pointer shadow-sm">
+            <label className="bg-white hover:bg-gray-50 text-gray-900 border-2 border-purple-200 px-6 py-3 rounded-full cursor-pointer shadow-lg font-semibold transition-all duration-200 hover:scale-105">
               Upload from Device
               <input
                 type="file"
@@ -410,11 +421,11 @@ export default function ReportIncident() {
                 <img
                   src={src}
                   alt={`Preview ${index + 1}`}
-                  className="w-full h-32 object-cover rounded-lg shadow-md border border-border"
+                  className="w-full h-32 object-cover rounded-2xl shadow-lg border-2 border-purple-200"
                 />
                 <button
                   onClick={() => removePhoto(index)}
-                  className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded-full px-2 py-1 text-xs shadow"
+                  className="absolute top-1 right-1 bg-red-600 text-white rounded-full px-3 py-1 text-xs shadow-lg hover:bg-red-700 font-semibold"
                 >
                   ✕
                 </button>
@@ -428,17 +439,17 @@ export default function ReportIncident() {
           placeholder="Add context about the incident..."
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          className="w-full sm:max-w-lg p-3 text-sm md:text-base border border-border rounded-lg focus:ring-2 focus:ring-ring focus:outline-none shadow-sm mt-4 bg-background text-foreground"
+          className="w-full sm:max-w-lg p-4 text-sm md:text-base border-2 border-purple-200 rounded-2xl focus:ring-2 focus:ring-purple-400 focus:outline-none shadow-lg mt-4 bg-white text-gray-900"
           rows={2}
         />
 
         {/* Location Selection */}
         <div className="w-full sm:max-w-lg mt-4 space-y-3">
-          <div className="flex items-center justify-between p-4 border border-border rounded-lg bg-card">
+          <div className="flex items-center justify-between p-4 border-2 border-purple-200 rounded-2xl bg-white shadow-lg">
             <div className="flex-1">
-              <h3 className="font-semibold text-foreground mb-1">📍 Incident Location</h3>
+              <h3 className="font-semibold text-gray-900 mb-1">📍 Incident Location</h3>
               {location.lat && location.lng ? (
-                <div className="text-sm text-muted-foreground space-y-1">
+                <div className="text-sm text-gray-600 space-y-1">
                   <p>Latitude: {location.lat.toFixed(6)}</p>
                   <p>Longitude: {location.lng.toFixed(6)}</p>
                   <p className="text-xs text-green-600 mt-1">
