@@ -29,14 +29,15 @@ export default function Footer() {
             {/* Social Links */}
             <div className="flex gap-3">
               {[
-                { icon: Twitter, href: "#" },
-                { icon: Github, href: "#" },
-                { icon: Linkedin, href: "#" },
-                { icon: Mail, href: "#" },
-              ].map((social, idx) => (
+                { icon: Twitter, href: "#", name: "Twitter" },
+                { icon: Github, href: "#", name: "GitHub" },
+                { icon: Linkedin, href: "#", name: "LinkedIn" },
+                { icon: Mail, href: "#", name: "Email" },
+              ].map((social) => (
                 <a
-                  key={idx}
+                  key={social.name}
                   href={social.href}
+                  aria-label={social.name}
                   className="p-2 rounded-xl bg-gradient-to-br from-purple-50 to-pink-50 text-purple-600 hover:from-purple-600 hover:to-pink-600 hover:text-white transition-all duration-200 hover:scale-110"
                 >
                   <social.icon className="h-4 w-4" />

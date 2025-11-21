@@ -4,6 +4,7 @@ import Nav from "@/components/custom/Nav";
 import { SwarContext } from "@/context/swarContext";
 import Link from "next/link";
 import { useContext, useEffect, useState } from "react";
+import { Shield, CheckCircle, Upload, Camera, User } from "lucide-react";
 
 interface Report {
   caseId: number;
@@ -212,8 +213,113 @@ function Reports() {
         <Nav />
       </div>
 
-      <div className="max-w-3xl mx-auto pt-10">
-        {/* Heading */}
+      <div className="max-w-6xl mx-auto pt-24">
+        {/* Profile Verification Section */}
+        <div className="mb-12 bg-white rounded-3xl shadow-2xl border-2 border-purple-200 p-8 md:p-12">
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-r from-purple-600 to-pink-600 mb-4">
+              <Shield className="h-10 w-10 text-white" />
+            </div>
+            <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent mb-2">
+              Get Verified
+            </h1>
+            <p className="text-gray-600 text-lg">
+              Verify your identity to build trust in the community
+            </p>
+          </div>
+
+          {/* Verification Steps */}
+          <div className="grid md:grid-cols-3 gap-6 mb-8">
+            <div className="text-center p-6 rounded-2xl bg-gradient-to-br from-purple-50 to-pink-50 border-2 border-purple-200">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-purple-600 text-white mb-4">
+                <User className="h-8 w-8" />
+              </div>
+              <h3 className="font-bold text-gray-900 mb-2">Step 1</h3>
+              <p className="text-sm text-gray-600">Upload Profile Photo</p>
+            </div>
+            <div className="text-center p-6 rounded-2xl bg-gradient-to-br from-purple-50 to-pink-50 border-2 border-purple-200">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-pink-600 text-white mb-4">
+                <Camera className="h-8 w-8" />
+              </div>
+              <h3 className="font-bold text-gray-900 mb-2">Step 2</h3>
+              <p className="text-sm text-gray-600">Verify with Selfie</p>
+            </div>
+            <div className="text-center p-6 rounded-2xl bg-gradient-to-br from-purple-50 to-pink-50 border-2 border-purple-200">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-purple-600 text-white mb-4">
+                <CheckCircle className="h-8 w-8" />
+              </div>
+              <h3 className="font-bold text-gray-900 mb-2">Step 3</h3>
+              <p className="text-sm text-gray-600">Get Verified Badge</p>
+            </div>
+          </div>
+
+          {/* Verification Form */}
+          <div className="max-w-2xl mx-auto space-y-6">
+            <div>
+              <label className="block text-sm font-semibold text-gray-900 mb-2">
+                Full Name
+              </label>
+              <input
+                type="text"
+                placeholder="Enter your full name"
+                className="w-full px-4 py-3 rounded-xl border-2 border-purple-200 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 outline-none transition-all"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-900 mb-2">
+                Email Address
+              </label>
+              <input
+                type="email"
+                placeholder="your.email@example.com"
+                className="w-full px-4 py-3 rounded-xl border-2 border-purple-200 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 outline-none transition-all"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-900 mb-2">
+                Phone Number
+              </label>
+              <input
+                type="tel"
+                placeholder="+91 XXXXX XXXXX"
+                className="w-full px-4 py-3 rounded-xl border-2 border-purple-200 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 outline-none transition-all"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-900 mb-2">
+                Upload Profile Photo
+              </label>
+              <div className="border-2 border-dashed border-purple-300 rounded-xl p-8 text-center hover:border-purple-500 transition-all cursor-pointer bg-purple-50/30">
+                <Upload className="h-12 w-12 text-purple-600 mx-auto mb-2" />
+                <p className="text-gray-600 font-medium">Click to upload or drag and drop</p>
+                <p className="text-sm text-gray-500 mt-1">PNG, JPG up to 5MB</p>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-gray-900 mb-2">
+                Verify with Live Selfie
+              </label>
+              <button className="w-full px-6 py-4 rounded-xl bg-white border-2 border-purple-300 hover:border-purple-500 text-gray-900 font-semibold flex items-center justify-center gap-3 transition-all hover:shadow-lg">
+                <Camera className="h-5 w-5 text-purple-600" />
+                Take Selfie for Verification
+              </button>
+            </div>
+
+            <button className="w-full px-8 py-4 rounded-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold text-lg hover:shadow-2xl hover:scale-105 transition-all duration-200">
+              Submit for Verification
+            </button>
+
+            <p className="text-center text-sm text-gray-500">
+              🔒 Your information is encrypted and secure
+            </p>
+          </div>
+        </div>
+
+        {/* Reports Section */}
         <div className="text-center mb-10">
           <div className="flex items-center justify-center gap-4 mb-4">
             <h1 className="text-3xl md:text-4xl font-bold text-foreground">

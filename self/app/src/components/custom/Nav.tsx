@@ -22,8 +22,8 @@ export default function Nav() {
       {/* Island-style Navbar */}
       <header className="fixed top-6 left-1/2 -translate-x-1/2 z-50 w-[95%] max-w-7xl">
         <div className="bg-white/80 backdrop-blur-2xl rounded-3xl shadow-2xl border border-white/20 px-6 py-4">
-          <div className="flex justify-between items-center">
-            {/* Logo */}
+          <div className="flex items-center">
+            {/* Logo - Left Side */}
             <Link href="/" className="flex items-center gap-3 group">
               <div className="relative">
                 <div className="absolute inset-0 bg-gradient-to-r from-purple-600 to-pink-600 rounded-2xl blur-lg opacity-50 group-hover:opacity-75 transition-opacity" />
@@ -36,8 +36,8 @@ export default function Nav() {
               </span>
             </Link>
 
-            {/* Desktop Navigation */}
-            <nav className="hidden md:flex items-center gap-8">
+            {/* Desktop Navigation - Right Side */}
+            <nav className="hidden md:flex items-center gap-8 ml-auto">
               {[
                 { to: "/search-location", icon: MapPin, label: "Safety Map" },
                 { to: "/testify", icon: MessageSquare, label: "Report" },
@@ -53,25 +53,6 @@ export default function Nav() {
                 </Link>
               ))}
             </nav>
-
-            {/* Desktop Actions */}
-            <div className="hidden md:flex items-center gap-3">
-              {/* <Button
-                variant="ghost"
-                size="sm"
-                className="flex items-center gap-2 rounded-full px-6 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:shadow-2xl hover:scale-105 transition-all duration-200 font-semibold"
-              >
-                <Wallet className="h-4 w-4" />
-                Connect Wallet
-              </Button> */}
-              <Button
-                size="sm"
-                className="flex items-center gap-2 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white font-bold rounded-full shadow-xl hover:shadow-2xl hover:scale-105 transition-all duration-200 animate-pulse"
-              >
-                <AlertTriangle className="h-4 w-4" />
-                SOS
-              </Button>
-            </div>
 
             {/* Mobile Menu Button */}
             <button
@@ -111,10 +92,6 @@ export default function Nav() {
                   <Wallet className="h-4 w-4 mr-2" />
                   Connect Wallet
                 </Button> */}
-                <Button className="w-full rounded-full bg-gradient-to-r from-red-500 to-red-600 text-white font-bold">
-                  <AlertTriangle className="h-4 w-4 mr-2" />
-                  SOS
-                </Button>
               </div>
             </nav>
           </div>

@@ -2,10 +2,9 @@
 
 import {
   FeatureHighlights,
-  Footer,
   HeroSection,
   Nav,
-  QuickActions, // don’t forget to import this if it’s in your components
+  QuickActions, // don't forget to import this if it's in your components
 } from "@/components/custom";
 // import { SwarContext } from "@/context/swarContext";
 // import { useRouter } from "next/navigation"; // ✅ Next.js hook
@@ -32,8 +31,6 @@ export default function HomePage() {
         <QuickActions />
         <FeatureHighlights />
       </main>
-
-      <Footer />
 
       {/* If you want a fixed bottom bar */}
       {/* <div className="fixed bottom-0 left-0 right-0 z-50">

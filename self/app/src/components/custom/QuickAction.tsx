@@ -47,10 +47,7 @@ export default function QuickActions() {
     <section className="py-20 px-4 relative">
       {/* Background Pattern */}
       <div className="absolute inset-0 opacity-10">
-        <div className="absolute inset-0" style={{
-          backgroundImage: `radial-gradient(circle at 2px 2px, rgba(139, 92, 246, 0.3) 1px, transparent 0)`,
-          backgroundSize: '40px 40px'
-        }} />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_2px_2px,rgba(139,92,246,0.3)_1px,transparent_0)] bg-[length:40px_40px]" />
       </div>
 
       <div className="container max-w-7xl mx-auto relative z-10">
@@ -127,16 +124,6 @@ export default function QuickActions() {
               </Link>
             );
           })}
-        </div>
-
-        {/* Bottom CTA */}
-        <div className="mt-16 text-center">
-          <p className="text-gray-600 mb-6">
-            Need help or have questions?
-          </p>
-          <Button className="rounded-full px-8 py-6 text-lg font-bold bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-2xl hover:shadow-purple-500/50 hover:scale-105 transition-all duration-300">
-            Contact Support 24/7
-          </Button>
         </div>
       </div>
     </section>
