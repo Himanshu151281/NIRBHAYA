@@ -1,9 +1,5 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Disable all caching - always fetch fresh data
-  experimental: {
-    isrMemoryCacheSize: 0,
-  },
   // Disable static optimization
   generateBuildId: async () => {
     return `build-${Date.now()}`;

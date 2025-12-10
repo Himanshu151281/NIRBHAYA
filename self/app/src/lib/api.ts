@@ -42,6 +42,19 @@ export const api = {
         throw error;
       }
       
+      // Check if it's a context mismatch error (image doesn't match description)
+      if (response.status === 400 && errorData?.detail?.error === 'CONTEXT_MISMATCH') {
+        const error = new Error(errorData.detail.message || "Image doesn't match description");
+        (error as any).isContextMismatch = true;
+        (error as any).imageAnalysis = errorData.detail.image_analysis;
+        (error as any).suggestedTitle = errorData.detail.suggested_title;
+        (error as any).suggestedDescription = errorData.detail.suggested_description;
+        (error as any).suggestedSeverity = errorData.detail.suggested_severity;
+        (error as any).aiReason = errorData.detail.reason;
+        (error as any).aiConfidence = errorData.detail.confidence;
+        throw error;
+      }
+      
       // Generic error for other cases
       throw new Error(`HTTP error! status: ${response.status}`);
     }
@@ -81,6 +94,38 @@ export const api = {
     
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    return response.json();
+  },
+
+  // Vote on an incident (upvote = accurate, downvote = inaccurate)
+  async voteIncident(
+    incidentId: string,
+    voteType: 'upvote' | 'downvote',
+    userId: string,
+    userLat?: number,
+    userLng?: number,
+    maxDistanceKm: number = 5
+  ) {
+    const params = new URLSearchParams({
+      vote_type: voteType,
+      user_id: userId,
+      max_distance_km: maxDistanceKm.toString(),
+    });
+    
+    if (userLat !== undefined && userLng !== undefined) {
+      params.append('user_lat', userLat.toString());
+      params.append('user_lng', userLng.toString());
+    }
+    
+    const response = await fetchNoCache(`${API_BASE_URL}/api/incidents/vote/${incidentId}?${params}`, {
+      method: 'POST',
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null);
+      throw new Error(errorData?.detail || `HTTP error! status: ${response.status}`);
     }
     
     return response.json();

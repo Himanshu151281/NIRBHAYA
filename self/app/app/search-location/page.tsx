@@ -1,18 +1,11 @@
 "use client";
 
 import Nav from "@/components/custom/Nav";
-import { useContext, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Map, { Marker, NavigationControl, GeolocateControl, Layer, Source, Popup } from "react-map-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
-import mapboxgl from "mapbox-gl";
 
-// Configure Mapbox to handle telemetry blocking gracefully
-if (typeof window !== 'undefined') {
-  const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-  if (token) {
-    mapboxgl.accessToken = token;
-  }
-}
+const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
 
 // Type definitions
 interface CustomDestination {
@@ -36,6 +29,12 @@ interface HarassmentIncident {
   location?: string;
   images?: string[]; // Add images array
   metadata?: any; // Add metadata for additional info
+  votes?: {
+    upvotes: number;
+    downvotes: number;
+    credibility_score: number;
+    total_votes: number;
+  };
 }
 
 interface SafetySettings {
@@ -44,7 +43,14 @@ interface SafetySettings {
   safetyBuffer: number;
 }
 
-const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
+// Nearby Incidents Settings Interface
+interface NearbyIncidentsSettings {
+  useCustomLocation: boolean;
+  customLocation: {lat: number; lng: number} | null;
+  radiusKm: number;
+  sortBy: 'time' | 'severity' | 'distance';
+  isPickingLocation: boolean;
+}
 
 const MyMap: React.FC = () => {
   const [harassmentIncidents, setHarassmentIncidents] = useState<HarassmentIncident[]>([]);
@@ -67,6 +73,126 @@ const MyMap: React.FC = () => {
     showIncidents: true,
     safetyBuffer: 500,
   });
+  const [mapError, setMapError] = useState<string | null>(null);
+  const [isMapReady, setIsMapReady] = useState(false);
+  
+  // Google Maps style From/To search state
+  const [startLocation, setStartLocation] = useState<CustomDestination | null>(null);
+  const [startQuery, setStartQuery] = useState("");
+  const [startSearchResults, setStartSearchResults] = useState<any[]>([]);
+  const [useCurrentAsStart, setUseCurrentAsStart] = useState(true);
+  const [activeSearchField, setActiveSearchField] = useState<'start' | 'end' | null>(null);
+  const [pickingLocationFor, setPickingLocationFor] = useState<'start' | 'end' | null>(null);
+  
+  // Nearby Incidents Feature State
+  const [nearbySettings, setNearbySettings] = useState<NearbyIncidentsSettings>({
+    useCustomLocation: false,
+    customLocation: null,
+    radiusKm: 5,
+    sortBy: 'distance',
+    isPickingLocation: false,
+  });
+  const [nearbyIncidents, setNearbyIncidents] = useState<(HarassmentIncident & { distanceKm: number })[]>([]);
+  
+  // Voting state
+  const [userVotes, setUserVotes] = useState<Record<string, 'upvote' | 'downvote'>>({});
+  const [votingIncidentId, setVotingIncidentId] = useState<string | null>(null);
+
+  // Generate or get user ID from localStorage (for simple duplicate prevention)
+  const getUserId = () => {
+    if (typeof window === 'undefined') return 'anonymous';
+    let userId = localStorage.getItem('nirbhaya_user_id');
+    if (!userId) {
+      userId = 'user_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
+      localStorage.setItem('nirbhaya_user_id', userId);
+    }
+    return userId;
+  };
+
+  // Load saved votes from localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedVotes = localStorage.getItem('nirbhaya_votes');
+      if (savedVotes) {
+        setUserVotes(JSON.parse(savedVotes));
+      }
+    }
+  }, []);
+
+  // Handle voting on an incident
+  const handleVote = async (incidentId: string, voteType: 'upvote' | 'downvote', e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent clicking through to incident
+    
+    const referenceLocation = nearbySettings.useCustomLocation && nearbySettings.customLocation
+      ? nearbySettings.customLocation
+      : currentLocation;
+    
+    if (!referenceLocation) {
+      alert('📍 Location required to vote. Please enable location access.');
+      return;
+    }
+    
+    // Check if user already voted the same way
+    if (userVotes[incidentId] === voteType) {
+      alert(`You've already ${voteType}d this incident.`);
+      return;
+    }
+    
+    setVotingIncidentId(incidentId);
+    
+    try {
+      const userId = getUserId();
+      const response = await fetch(
+        `http://localhost:8000/api/incidents/vote/${incidentId}?vote_type=${voteType}&user_id=${userId}&user_lat=${referenceLocation.lat}&user_lng=${referenceLocation.lng}&max_distance_km=${nearbySettings.radiusKm}`,
+        { method: 'POST' }
+      );
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.detail || 'Failed to vote');
+      }
+      
+      const data = await response.json();
+      
+      // Update local vote record
+      const newVotes = { ...userVotes, [incidentId]: voteType };
+      setUserVotes(newVotes);
+      localStorage.setItem('nirbhaya_votes', JSON.stringify(newVotes));
+      
+      // Update the incident's vote counts in state
+      setHarassmentIncidents(prev => prev.map(incident => {
+        if (String(incident.id) === incidentId) {
+          return {
+            ...incident,
+            votes: data.votes
+          };
+        }
+        return incident;
+      }));
+      
+      // Also update nearbyIncidents
+      setNearbyIncidents(prev => prev.map(incident => {
+        if (String(incident.id) === incidentId) {
+          return {
+            ...incident,
+            votes: data.votes
+          };
+        }
+        return incident;
+      }));
+      
+    } catch (error) {
+      console.error('Vote error:', error);
+      alert(`❌ ${error instanceof Error ? error.message : 'Failed to vote'}`);
+    } finally {
+      setVotingIncidentId(null);
+    }
+  };
+
+  // Ensure map only renders on client side
+  useEffect(() => {
+    setIsMapReady(true);
+  }, []);
 
   // Fetch real reports from backend API
   useEffect(() => {
@@ -125,6 +251,7 @@ const MyMap: React.FC = () => {
                 location: report.address || report.location?.address || `${lat}, ${lng}`,
                 images: report.metadata?.images || report.images || [],
                 metadata: report.metadata || {},
+                votes: report.votes || { upvotes: 0, downvotes: 0, credibility_score: 100, total_votes: 0 },
               };
             })
             .filter((incident: any) => incident.lat !== 0 && incident.lng !== 0); // Filter out invalid coordinates
@@ -253,18 +380,55 @@ const MyMap: React.FC = () => {
   }, []);
 
   // Search for places using Mapbox Geocoding API
-  const handleSearch = async (query: string) => {
-    if (!query.trim() || !MAPBOX_TOKEN) return;
+  const handleSearch = async (query: string, isStartSearch: boolean = false) => {
+    if (!query.trim() || !MAPBOX_TOKEN) {
+      if (isStartSearch) {
+        setStartSearchResults([]);
+      } else {
+        setSearchResults([]);
+      }
+      return;
+    }
     
     try {
       const response = await fetch(
         `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${MAPBOX_TOKEN}&country=IN&limit=5`
       );
       const data = await response.json();
-      setSearchResults(data.features || []);
+      if (isStartSearch) {
+        setStartSearchResults(data.features || []);
+      } else {
+        setSearchResults(data.features || []);
+      }
     } catch (error) {
       console.error("Search error:", error);
-      setSearchResults([]);
+      if (isStartSearch) {
+        setStartSearchResults([]);
+      } else {
+        setSearchResults([]);
+      }
+    }
+  };
+
+  // Handle start location selection
+  const handleSelectStartLocation = (place: any) => {
+    const [lng, lat] = place.center;
+    const start: CustomDestination = {
+      lat,
+      lng,
+      name: place.text,
+      address: place.place_name,
+    };
+    setStartLocation(start);
+    setStartQuery(place.place_name);
+    setStartSearchResults([]);
+    setUseCurrentAsStart(false);
+    setActiveSearchField(null);
+    setViewport({ ...viewport, longitude: lng, latitude: lat, zoom: 14 });
+    
+    // Get route if we have destination
+    if (selectedDestination) {
+      getRoute(start, selectedDestination);
     }
   };
 
@@ -280,11 +444,67 @@ const MyMap: React.FC = () => {
     setSelectedDestination(destination);
     setSearchQuery(place.place_name);
     setSearchResults([]);
+    setActiveSearchField(null);
     setViewport({ ...viewport, longitude: lng, latitude: lat, zoom: 14 });
     
-    // Get route if we have current location
-    if (currentLocation) {
-      getRoute(currentLocation, destination);
+    // Get route - use custom start location or current location
+    const startPoint = useCurrentAsStart ? currentLocation : startLocation;
+    if (startPoint) {
+      getRoute(startPoint, destination);
+    }
+  };
+
+  // Swap start and destination
+  const swapLocations = () => {
+    if (!selectedDestination) return;
+    
+    const tempDest = selectedDestination;
+    const tempDestQuery = searchQuery;
+    
+    if (useCurrentAsStart && currentLocation) {
+      // Swap current location with destination
+      setStartLocation(tempDest);
+      setStartQuery(tempDestQuery);
+      setUseCurrentAsStart(false);
+      
+      // Make destination the current location
+      setSelectedDestination({
+        lat: currentLocation.lat,
+        lng: currentLocation.lng,
+        name: "Current Location",
+        address: "Your current location"
+      });
+      setSearchQuery("Current Location");
+      
+      // Recalculate route
+      getRoute(tempDest, {
+        lat: currentLocation.lat,
+        lng: currentLocation.lng,
+        name: "Current Location",
+        address: "Your current location"
+      });
+    } else if (startLocation) {
+      // Swap custom start with destination
+      setSelectedDestination(startLocation);
+      setSearchQuery(startQuery);
+      setStartLocation(tempDest);
+      setStartQuery(tempDestQuery);
+      
+      // Recalculate route
+      getRoute(tempDest, startLocation);
+    }
+  };
+
+  // Use current location as start
+  const useCurrentLocation = () => {
+    setUseCurrentAsStart(true);
+    setStartLocation(null);
+    setStartQuery("");
+    setStartSearchResults([]);
+    
+    // Recalculate route if destination exists
+    if (currentLocation && selectedDestination) {
+      getRoute(currentLocation, selectedDestination);
     }
   };
 
@@ -332,6 +552,13 @@ const MyMap: React.FC = () => {
     setRouteData(null);
     setSelectedDestination(null);
     setSearchQuery("");
+    setStartLocation(null);
+    setStartQuery("");
+    setUseCurrentAsStart(true);
+    setStartSearchResults([]);
+    setSearchResults([]);
+    setPickingLocationFor(null);
+    setActiveSearchField(null);
   };
 
   const getSeverityColor = (severity: HarassmentIncident["severity"]): string => {
@@ -375,6 +602,49 @@ const MyMap: React.FC = () => {
 
     return R * c; // Distance in meters
   };
+
+  // Calculate nearby incidents based on settings (for the Nearby Incidents feature)
+  useEffect(() => {
+    const referenceLocation = nearbySettings.useCustomLocation && nearbySettings.customLocation
+      ? nearbySettings.customLocation
+      : currentLocation;
+
+    if (!referenceLocation || harassmentIncidents.length === 0) {
+      setNearbyIncidents([]);
+      return;
+    }
+
+    // Calculate distance for each incident and filter by radius
+    const incidentsWithDistance = harassmentIncidents
+      .map((incident) => {
+        const distanceMeters = calculateDistance(
+          referenceLocation.lat,
+          referenceLocation.lng,
+          incident.lat,
+          incident.lng
+        );
+        const distanceKm = distanceMeters / 1000;
+        return { ...incident, distanceKm };
+      })
+      .filter((incident) => incident.distanceKm <= nearbySettings.radiusKm);
+
+    // Sort incidents based on selected criteria
+    const sortedIncidents = [...incidentsWithDistance].sort((a, b) => {
+      switch (nearbySettings.sortBy) {
+        case 'distance':
+          return a.distanceKm - b.distanceKm;
+        case 'severity':
+          const severityOrder = { high: 0, medium: 1, low: 2 };
+          return severityOrder[a.severity] - severityOrder[b.severity];
+        case 'time':
+          return new Date(b.date).getTime() - new Date(a.date).getTime();
+        default:
+          return a.distanceKm - b.distanceKm;
+      }
+    });
+
+    setNearbyIncidents(sortedIncidents);
+  }, [nearbySettings, currentLocation, harassmentIncidents]);
 
   // Calculate incident clustering density to determine critical zones
   // Returns cluster multiplier: 1.0 (isolated) to 3.0+ (hot zone)
@@ -519,19 +789,85 @@ const MyMap: React.FC = () => {
       <div className="flex flex-1 relative">
         {/* Map */}
         <div className="flex-1">
-          <Map
-            {...viewport}
-            onMove={(evt) => setViewport(evt.viewState)}
-            onClick={() => setSelectedIncident(null)}
-            mapStyle="mapbox://styles/mapbox/streets-v12"
-            mapboxAccessToken={MAPBOX_TOKEN}
-            style={{ width: "100%", height: "100%" }}
-            onError={(e) => {
-              // Suppress telemetry errors from ad blockers
-              if (e.error?.message?.includes('NetworkError') || e.error?.message?.includes('events.mapbox')) {
-                console.warn('Mapbox telemetry blocked (ad blocker). Map functionality will continue.');
+          {isMapReady ? (
+            <Map
+              {...viewport}
+              onMove={(evt) => setViewport(evt.viewState)}
+              onClick={async (evt) => {
+                const { lng, lat } = evt.lngLat;
+                
+                // If picking route location (start or destination)
+                if (pickingLocationFor) {
+                  // Reverse geocode to get address
+                  let placeName = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+                  try {
+                    const response = await fetch(
+                      `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${MAPBOX_TOKEN}&limit=1`
+                    );
+                    const data = await response.json();
+                    if (data.features && data.features.length > 0) {
+                      placeName = data.features[0].place_name || placeName;
+                    }
+                  } catch (error) {
+                    console.error("Reverse geocode error:", error);
+                  }
+                  
+                  const location: CustomDestination = {
+                    lat,
+                    lng,
+                    name: placeName.split(',')[0],
+                    address: placeName,
+                  };
+                  
+                  if (pickingLocationFor === 'start') {
+                    setStartLocation(location);
+                    setStartQuery(placeName);
+                    setUseCurrentAsStart(false);
+                    if (selectedDestination) {
+                      getRoute(location, selectedDestination);
+                    }
+                  } else {
+                    setSelectedDestination(location);
+                    setSearchQuery(placeName);
+                    const startPoint = useCurrentAsStart ? currentLocation : startLocation;
+                    if (startPoint) {
+                      getRoute(startPoint, location);
+                    }
+                  }
+                  setPickingLocationFor(null);
+                  return;
+                }
+                
+                // If picking location for nearby incidents
+                if (nearbySettings.isPickingLocation) {
+                  setNearbySettings(prev => ({
+                    ...prev,
+                    customLocation: { lat, lng },
+                    useCustomLocation: true,
+                    isPickingLocation: false,
+                  }));
+                  console.log("📍 Custom location set:", { lat, lng });
+                } else {
+                  setSelectedIncident(null);
+                }
+              }}
+              cursor={pickingLocationFor || nearbySettings.isPickingLocation ? 'crosshair' : 'grab'}
+              mapStyle="mapbox://styles/mapbox/streets-v12"
+              mapboxAccessToken={MAPBOX_TOKEN}
+              style={{ width: "100%", height: "100%" }}
+              onError={(e) => {
+                // Suppress telemetry errors from ad blockers and worker errors
+                const errorMsg = e.error?.message || String(e.error) || '';
+                if (
+                  errorMsg.includes('NetworkError') || 
+                  errorMsg.includes('events.mapbox') ||
+                  errorMsg.includes('send') ||
+                errorMsg.includes('worker')
+              ) {
+                console.warn('Mapbox worker/telemetry issue (often caused by ad blockers). Map may still work.');
               } else {
-                console.error('Map error:', e.error?.message || e);
+                console.error('Map error:', errorMsg || e);
+                setMapError(errorMsg);
               }
             }}
           >
@@ -577,6 +913,90 @@ const MyMap: React.FC = () => {
               </Marker>
             )}
 
+            {/* Custom location marker for nearby incidents */}
+            {nearbySettings.useCustomLocation && nearbySettings.customLocation && (
+              <Marker
+                longitude={nearbySettings.customLocation.lng}
+                latitude={nearbySettings.customLocation.lat}
+                anchor="center"
+              >
+                <div className="relative">
+                  <div className="w-8 h-8 bg-purple-600 rounded-full border-3 border-white shadow-lg flex items-center justify-center text-white text-sm font-bold">
+                    📍
+                  </div>
+                  <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-6 border-l-transparent border-r-transparent border-t-purple-600"></div>
+                </div>
+              </Marker>
+            )}
+
+            {/* Radius circle visualization */}
+            {(() => {
+              const center = nearbySettings.useCustomLocation && nearbySettings.customLocation
+                ? nearbySettings.customLocation
+                : currentLocation;
+              if (!center) return null;
+              
+              // Create a circle polygon for the radius
+              const points = 64;
+              const radiusInDegrees = nearbySettings.radiusKm / 111; // rough conversion
+              const coordinates = [];
+              for (let i = 0; i <= points; i++) {
+                const angle = (i / points) * 2 * Math.PI;
+                const lng = center.lng + radiusInDegrees * Math.cos(angle) / Math.cos(center.lat * Math.PI / 180);
+                const lat = center.lat + radiusInDegrees * Math.sin(angle);
+                coordinates.push([lng, lat]);
+              }
+              
+              return (
+                <Source
+                  id="radius-circle"
+                  type="geojson"
+                  data={{
+                    type: "Feature",
+                    properties: {},
+                    geometry: {
+                      type: "Polygon",
+                      coordinates: [coordinates],
+                    },
+                  }}
+                >
+                  <Layer
+                    id="radius-fill"
+                    type="fill"
+                    paint={{
+                      "fill-color": "#8b5cf6",
+                      "fill-opacity": 0.1,
+                    }}
+                  />
+                  <Layer
+                    id="radius-outline"
+                    type="line"
+                    paint={{
+                      "line-color": "#8b5cf6",
+                      "line-width": 2,
+                      "line-dasharray": [3, 2],
+                    }}
+                  />
+                </Source>
+              );
+            })()}
+
+            {/* Custom start location marker (when not using GPS) */}
+            {!useCurrentAsStart && startLocation && (
+              <Marker
+                longitude={startLocation.lng}
+                latitude={startLocation.lat}
+                anchor="bottom"
+              >
+                <div className="relative">
+                  <div className="w-8 h-8 bg-green-500 rounded-full border-3 border-white shadow-lg flex items-center justify-center">
+                    <span className="text-white text-xs font-bold">A</span>
+                  </div>
+                  <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-6 border-l-transparent border-r-transparent border-t-green-500"></div>
+                </div>
+              </Marker>
+            )}
+
             {/* Selected destination marker */}
             {selectedDestination && (
               <Marker
@@ -584,7 +1004,12 @@ const MyMap: React.FC = () => {
                 latitude={selectedDestination.lat}
                 anchor="bottom"
               >
-                <div className="w-6 h-6 bg-red-500 rounded-full border-2 border-white shadow-lg" />
+                <div className="relative">
+                  <div className="w-8 h-8 bg-red-500 rounded-full border-3 border-white shadow-lg flex items-center justify-center">
+                    <span className="text-white text-xs font-bold">B</span>
+                  </div>
+                  <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-6 border-l-transparent border-r-transparent border-t-red-500"></div>
+                </div>
               </Marker>
             )}
 
@@ -772,7 +1197,15 @@ const MyMap: React.FC = () => {
                 />
               </Source>
             )}
-          </Map>
+            </Map>
+          ) : (
+            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-purple-50 to-pink-50">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
+                <p className="text-purple-600 font-medium">Loading map...</p>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Side panel */}
@@ -830,37 +1263,170 @@ const MyMap: React.FC = () => {
             )}
           </div>
 
-          {/* Search box */}
-          <div className="mb-4">
-            <label className="block text-sm font-medium mb-2">
-              Search Destination
-            </label>
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                handleSearch(e.target.value);
-              }}
-              placeholder="Enter destination..."
-              className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
+          {/* Google Maps Style From/To Search */}
+          <div className="mb-4 bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-purple-600 to-pink-600 px-4 py-2 flex items-center justify-between">
+              <h3 className="text-white font-semibold text-sm">🗺️ Plan Your Safe Route</h3>
+              {pickingLocationFor && (
+                <span className="text-white text-xs bg-white/20 px-2 py-1 rounded-full">
+                  Click map to set {pickingLocationFor === 'start' ? 'start' : 'destination'}
+                </span>
+              )}
+            </div>
             
-            {/* Search results dropdown */}
-            {searchResults.length > 0 && (
-              <div className="mt-2 border rounded-lg shadow-lg max-h-60 overflow-y-auto bg-white">
-                {searchResults.map((result, index) => (
-                  <div
-                    key={index}
-                    onClick={() => handleSelectDestination(result)}
-                    className="px-4 py-2 hover:bg-gray-100 cursor-pointer border-b last:border-b-0"
-                  >
-                    <div className="font-medium">{result.text}</div>
-                    <div className="text-sm text-gray-600">{result.place_name}</div>
+            <div className="p-3 space-y-2">
+              {/* FROM Location */}
+              <div className="relative">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
+                    <span className="text-white text-xs font-bold">A</span>
                   </div>
-                ))}
+                  <input
+                    type="text"
+                    value={useCurrentAsStart ? "📍 Your Location" : startQuery}
+                    onChange={(e) => {
+                      setStartQuery(e.target.value);
+                      setUseCurrentAsStart(false);
+                      handleSearch(e.target.value, true);
+                      setActiveSearchField('start');
+                    }}
+                    onFocus={() => setActiveSearchField('start')}
+                    placeholder="Starting point..."
+                    className={`flex-1 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 ${
+                      useCurrentAsStart ? 'bg-green-50 border-green-300 text-green-700' : 'border-gray-200'
+                    }`}
+                  />
+                  <button
+                    onClick={() => {
+                      setPickingLocationFor('start');
+                      setActiveSearchField(null);
+                    }}
+                    className={`p-2 rounded-lg transition-all flex-shrink-0 ${
+                      pickingLocationFor === 'start' 
+                        ? 'bg-green-500 text-white' 
+                        : 'bg-gray-100 text-gray-600 hover:bg-green-100 hover:text-green-600'
+                    }`}
+                    title="Select on map"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                  </button>
+                </div>
+                
+                {/* Quick actions for start */}
+                {!useCurrentAsStart && currentLocation && (
+                  <button
+                    onClick={useCurrentLocation}
+                    className="ml-8 mt-1 text-xs text-green-600 hover:text-green-700"
+                  >
+                    📍 Use my location
+                  </button>
+                )}
+                
+                {/* Start search results */}
+                {activeSearchField === 'start' && startSearchResults.length > 0 && (
+                  <div className="absolute left-8 right-0 mt-1 z-50 border rounded-lg shadow-lg max-h-40 overflow-y-auto bg-white">
+                    {startSearchResults.map((result, index) => (
+                      <div
+                        key={index}
+                        onClick={() => handleSelectStartLocation(result)}
+                        className="px-3 py-2 hover:bg-purple-50 cursor-pointer border-b last:border-b-0"
+                      >
+                        <div className="font-medium text-sm">{result.text}</div>
+                        <div className="text-xs text-gray-500 truncate">{result.place_name}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
+
+              {/* Swap Button - centered line */}
+              <div className="flex items-center justify-center py-1">
+                <div className="flex-1 h-px bg-gray-200"></div>
+                <button
+                  onClick={swapLocations}
+                  disabled={!selectedDestination}
+                  className={`mx-2 p-1.5 rounded-full border transition-all ${
+                    selectedDestination 
+                      ? 'bg-white border-purple-300 hover:bg-purple-50 cursor-pointer' 
+                      : 'bg-gray-50 border-gray-200 cursor-not-allowed opacity-50'
+                  }`}
+                  title="Swap locations"
+                >
+                  <svg className="w-3 h-3 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                  </svg>
+                </button>
+                <div className="flex-1 h-px bg-gray-200"></div>
+              </div>
+
+              {/* TO Location */}
+              <div className="relative">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-full bg-red-500 flex items-center justify-center flex-shrink-0">
+                    <span className="text-white text-xs font-bold">B</span>
+                  </div>
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value);
+                      handleSearch(e.target.value, false);
+                      setActiveSearchField('end');
+                    }}
+                    onFocus={() => setActiveSearchField('end')}
+                    placeholder="Where to?"
+                    className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                  <button
+                    onClick={() => {
+                      setPickingLocationFor('end');
+                      setActiveSearchField(null);
+                    }}
+                    className={`p-2 rounded-lg transition-all flex-shrink-0 ${
+                      pickingLocationFor === 'end' 
+                        ? 'bg-red-500 text-white' 
+                        : 'bg-gray-100 text-gray-600 hover:bg-red-100 hover:text-red-600'
+                    }`}
+                    title="Select on map"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                  </button>
+                </div>
+                
+                {/* Destination search results */}
+                {activeSearchField === 'end' && searchResults.length > 0 && (
+                  <div className="absolute left-8 right-0 mt-1 z-50 border rounded-lg shadow-lg max-h-40 overflow-y-auto bg-white">
+                    {searchResults.map((result, index) => (
+                      <div
+                        key={index}
+                        onClick={() => handleSelectDestination(result)}
+                        className="px-3 py-2 hover:bg-purple-50 cursor-pointer border-b last:border-b-0"
+                      >
+                        <div className="font-medium text-sm">{result.text}</div>
+                        <div className="text-xs text-gray-500 truncate">{result.place_name}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Clear Route Button */}
+              {routeData && (
+                <button
+                  onClick={clearRoute}
+                  className="w-full py-1.5 text-xs text-red-600 hover:bg-red-50 rounded-lg transition-all font-medium border border-red-200"
+                >
+                  ✕ Clear Route
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Route info with safety analysis */}
@@ -1041,25 +1607,216 @@ const MyMap: React.FC = () => {
             </div>
           </div>
 
-          {/* Total Risk Count */}
-          <div className="mt-6 pt-6 border-t">
-            {isLoadingReports ? (
-              <div className="text-center py-4 text-sm text-gray-500">Loading reports...</div>
-            ) : harassmentIncidents.length === 0 ? (
-              <div className="text-center py-4 text-sm text-gray-500">No incidents reported yet</div>
-            ) : (
-              <div className="bg-gradient-to-r from-red-50 to-orange-50 p-4 rounded-lg border-2 border-red-200">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-10 h-10 bg-red-500 rounded-full flex items-center justify-center text-white font-bold text-lg">
-                      ⚠️
-                    </div>
-                    <span className="text-lg font-bold text-gray-800">Total Risk Areas</span>
-                  </div>
-                  <span className="text-3xl font-bold text-red-600">{harassmentIncidents.length}</span>
-                </div>
+          {/* Nearby Incidents Feature - Like Tinder/Food Delivery Apps */}
+          <div className="mt-4 space-y-3 bg-gradient-to-br from-purple-50 to-indigo-50 p-4 rounded-2xl border-2 border-purple-200 shadow-sm">
+            <div className="flex items-center justify-between border-b border-purple-200 pb-2">
+              <h3 className="font-bold text-lg text-purple-900 flex items-center gap-2">
+                🔍 Nearby Incidents
+              </h3>
+              <span className="text-xs bg-purple-600 text-white px-2 py-1 rounded-full font-semibold">
+                {nearbyIncidents.length} found
+              </span>
+            </div>
+
+            {/* Location Mode Toggle */}
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-purple-900 block">📍 Reference Location</label>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setNearbySettings(prev => ({ ...prev, useCustomLocation: false, isPickingLocation: false }));
+                  }}
+                  className={`flex-1 px-3 py-2 text-xs rounded-lg font-medium transition-all ${
+                    !nearbySettings.useCustomLocation
+                      ? 'bg-purple-600 text-white shadow-md'
+                      : 'bg-white text-purple-700 border border-purple-300 hover:bg-purple-50'
+                  }`}
+                >
+                  🎯 My Location
+                </button>
+                <button
+                  onClick={() => {
+                    setNearbySettings(prev => ({ ...prev, isPickingLocation: true }));
+                  }}
+                  className={`flex-1 px-3 py-2 text-xs rounded-lg font-medium transition-all ${
+                    nearbySettings.isPickingLocation
+                      ? 'bg-orange-500 text-white shadow-md animate-pulse'
+                      : nearbySettings.useCustomLocation
+                        ? 'bg-purple-600 text-white shadow-md'
+                        : 'bg-white text-purple-700 border border-purple-300 hover:bg-purple-50'
+                  }`}
+                >
+                  {nearbySettings.isPickingLocation ? '👆 Click Map...' : '📌 Custom'}
+                </button>
               </div>
-            )}
+              {nearbySettings.useCustomLocation && nearbySettings.customLocation && (
+                <div className="text-xs text-purple-700 bg-purple-100 px-3 py-2 rounded-lg">
+                  <span className="font-medium">Custom:</span> {nearbySettings.customLocation.lat.toFixed(4)}, {nearbySettings.customLocation.lng.toFixed(4)}
+                </div>
+              )}
+            </div>
+
+            {/* Radius Slider - Like Tinder Distance */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label htmlFor="radius-slider" className="text-sm font-semibold text-purple-900">📏 Search Radius</label>
+                <span className="text-sm font-bold text-purple-700 bg-purple-100 px-3 py-1 rounded-full">
+                  {nearbySettings.radiusKm} km
+                </span>
+              </div>
+              <input
+                id="radius-slider"
+                type="range"
+                min="1"
+                max="20"
+                value={nearbySettings.radiusKm}
+                onChange={(e) => setNearbySettings(prev => ({ ...prev, radiusKm: Number(e.target.value) }))}
+                className="w-full h-2 bg-purple-200 rounded-lg appearance-none cursor-pointer accent-purple-600"
+                title={`Search radius: ${nearbySettings.radiusKm} km`}
+              />
+              <div className="flex justify-between text-xs text-purple-500">
+                <span>1 km</span>
+                <span>10 km</span>
+                <span>20 km</span>
+              </div>
+            </div>
+
+            {/* Sort Options */}
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-purple-900 block">🔢 Sort By</label>
+              <div className="flex gap-2">
+                {[
+                  { key: 'distance', label: '📍 Distance', icon: '📍' },
+                  { key: 'severity', label: '⚠️ Severity', icon: '⚠️' },
+                  { key: 'time', label: '🕐 Recent', icon: '🕐' },
+                ].map(({ key, label }) => (
+                  <button
+                    key={key}
+                    onClick={() => setNearbySettings(prev => ({ ...prev, sortBy: key as 'distance' | 'severity' | 'time' }))}
+                    className={`flex-1 px-2 py-1.5 text-xs rounded-lg font-medium transition-all ${
+                      nearbySettings.sortBy === key
+                        ? 'bg-purple-600 text-white shadow-md'
+                        : 'bg-white text-purple-700 border border-purple-300 hover:bg-purple-50'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Nearby Incidents List */}
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {!currentLocation && !nearbySettings.customLocation ? (
+                <div className="text-center py-4 text-sm text-purple-500">
+                  📍 Waiting for location...
+                </div>
+              ) : nearbyIncidents.length === 0 ? (
+                <div className="text-center py-4">
+                  <div className="text-3xl mb-2">✅</div>
+                  <div className="text-sm text-green-600 font-medium">No incidents within {nearbySettings.radiusKm} km</div>
+                  <div className="text-xs text-gray-500 mt-1">This area appears safe!</div>
+                </div>
+              ) : (
+                nearbyIncidents.map((incident, idx) => (
+                  <div
+                    key={incident.id}
+                    onClick={() => {
+                      setSelectedIncident(incident);
+                      setViewport({
+                        longitude: incident.lng,
+                        latitude: incident.lat,
+                        zoom: 16
+                      });
+                    }}
+                    className={`p-3 rounded-xl cursor-pointer transition-all hover:shadow-md border-l-4 ${
+                      incident.severity === 'high'
+                        ? 'bg-red-50 border-red-500 hover:bg-red-100'
+                        : incident.severity === 'medium'
+                          ? 'bg-orange-50 border-orange-500 hover:bg-orange-100'
+                          : 'bg-yellow-50 border-yellow-500 hover:bg-yellow-100'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                            incident.severity === 'high'
+                              ? 'bg-red-500 text-white'
+                              : incident.severity === 'medium'
+                                ? 'bg-orange-500 text-white'
+                                : 'bg-yellow-500 text-white'
+                          }`}>
+                            {incident.severity.toUpperCase()}
+                          </span>
+                          <span className="text-xs text-gray-500">{incident.date}</span>
+                          {/* Credibility Score Badge */}
+                          {incident.votes && incident.votes.total_votes > 0 && (
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                              incident.votes.credibility_score >= 70 
+                                ? 'bg-green-100 text-green-700' 
+                                : incident.votes.credibility_score >= 40 
+                                  ? 'bg-yellow-100 text-yellow-700' 
+                                  : 'bg-red-100 text-red-700'
+                            }`}>
+                              {incident.votes.credibility_score}% verified
+                            </span>
+                          )}
+                        </div>
+                        <h4 className="text-sm font-semibold text-gray-800 line-clamp-1">
+                          {incident.title || 'Incident'}
+                        </h4>
+                        {incident.description && (
+                          <p className="text-xs text-gray-600 mt-1 line-clamp-2">
+                            {incident.description}
+                          </p>
+                        )}
+                        
+                        {/* Voting Buttons */}
+                        <div className="flex items-center gap-2 mt-2" onClick={e => e.stopPropagation()}>
+                          <button
+                            onClick={(e) => handleVote(String(incident.id), 'upvote', e)}
+                            disabled={votingIncidentId === String(incident.id)}
+                            className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-all ${
+                              userVotes[String(incident.id)] === 'upvote'
+                                ? 'bg-green-500 text-white'
+                                : 'bg-green-100 text-green-700 hover:bg-green-200'
+                            } ${votingIncidentId === String(incident.id) ? 'opacity-50 cursor-wait' : ''}`}
+                          >
+                            <span>👍</span>
+                            <span>{incident.votes?.upvotes || 0}</span>
+                          </button>
+                          <button
+                            onClick={(e) => handleVote(String(incident.id), 'downvote', e)}
+                            disabled={votingIncidentId === String(incident.id)}
+                            className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-all ${
+                              userVotes[String(incident.id)] === 'downvote'
+                                ? 'bg-red-500 text-white'
+                                : 'bg-red-100 text-red-700 hover:bg-red-200'
+                            } ${votingIncidentId === String(incident.id) ? 'opacity-50 cursor-wait' : ''}`}
+                          >
+                            <span>👎</span>
+                            <span>{incident.votes?.downvotes || 0}</span>
+                          </button>
+                          <span className="text-xs text-gray-400 ml-1">
+                            {incident.votes?.total_votes || 0} votes
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-right ml-2">
+                        <div className="text-lg font-bold text-purple-600">
+                          {incident.distanceKm < 1
+                            ? `${Math.round(incident.distanceKm * 1000)}m`
+                            : `${incident.distanceKm.toFixed(1)}km`
+                          }
+                        </div>
+                        <div className="text-xs text-gray-400">away</div>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         </div>
       </div>

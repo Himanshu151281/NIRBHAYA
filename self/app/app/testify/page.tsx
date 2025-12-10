@@ -37,6 +37,17 @@ export default function ReportIncident() {
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
 
+  // State for AI context mismatch suggestions
+  const [aiSuggestion, setAiSuggestion] = useState<{
+    show: boolean;
+    imageAnalysis: string;
+    suggestedTitle: string;
+    suggestedDescription: string;
+    suggestedSeverity: string;
+    reason: string;
+    confidence: string;
+  } | null>(null);
+
   // Ask location on load
   useEffect(() => {
     if (locationMode === "current") {
@@ -352,6 +363,22 @@ export default function ReportIncident() {
     } catch (err) {
       console.log("❌ Error submitting report:", err);
       
+      // Check if it's a context mismatch (image doesn't match description)
+      if (err instanceof Error && (err as any).isContextMismatch) {
+        const suggestion = {
+          show: true,
+          imageAnalysis: (err as any).imageAnalysis || 'Image content detected',
+          suggestedTitle: (err as any).suggestedTitle || '',
+          suggestedDescription: (err as any).suggestedDescription || '',
+          suggestedSeverity: (err as any).suggestedSeverity || 'Medium',
+          reason: (err as any).aiReason || 'AI detected a mismatch',
+          confidence: (err as any).aiConfidence || 'unknown'
+        };
+        setAiSuggestion(suggestion);
+        setIsLoading(false);
+        return; // Don't show alert, show the suggestion UI instead
+      }
+      
       // Check if it's an AI validation rejection
       if (err instanceof Error && (err as any).isAIRejection) {
         const aiReason = (err as any).aiReason || 'AI validation failed';
@@ -372,6 +399,95 @@ export default function ReportIncident() {
       <div className="fixed top-0 left-0 right-0 z-50">
         <Nav />
       </div>
+      
+      {/* AI Context Mismatch Suggestion Modal */}
+      {aiSuggestion?.show && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 space-y-4">
+              {/* Header */}
+              <div className="flex items-center gap-3 border-b pb-4">
+                <div className="w-12 h-12 rounded-full bg-yellow-100 flex items-center justify-center">
+                  <span className="text-2xl">🤖</span>
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">AI Detected a Mismatch</h3>
+                  <p className="text-sm text-gray-500">Your description doesn't match the image content</p>
+                </div>
+              </div>
+              
+              {/* AI Analysis */}
+              <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
+                <p className="text-sm font-medium text-yellow-800 mb-2">📸 What AI sees in your image:</p>
+                <p className="text-sm text-yellow-700">{aiSuggestion.imageAnalysis}</p>
+              </div>
+              
+              {/* Reason */}
+              <div className="bg-gray-50 rounded-xl p-4">
+                <p className="text-sm text-gray-600">
+                  <strong>Reason:</strong> {aiSuggestion.reason}
+                </p>
+                <p className="text-xs text-gray-400 mt-1">Confidence: {aiSuggestion.confidence}</p>
+              </div>
+              
+              {/* Suggested Corrections */}
+              <div className="space-y-3">
+                <p className="text-sm font-semibold text-purple-700">✨ Suggested Correction:</p>
+                
+                <div className="space-y-2">
+                  <label className="block text-xs font-medium text-gray-600">Suggested Title:</label>
+                  <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 text-sm text-purple-800">
+                    {aiSuggestion.suggestedTitle}
+                  </div>
+                </div>
+                
+                <div className="space-y-2">
+                  <label className="block text-xs font-medium text-gray-600">Suggested Description:</label>
+                  <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 text-sm text-purple-800">
+                    {aiSuggestion.suggestedDescription}
+                  </div>
+                </div>
+                
+                <div className="space-y-2">
+                  <label className="block text-xs font-medium text-gray-600">Suggested Severity:</label>
+                  <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${
+                    aiSuggestion.suggestedSeverity === 'High' ? 'bg-red-100 text-red-700' :
+                    aiSuggestion.suggestedSeverity === 'Medium' ? 'bg-yellow-100 text-yellow-700' :
+                    'bg-green-100 text-green-700'
+                  }`}>
+                    {aiSuggestion.suggestedSeverity}
+                  </span>
+                </div>
+              </div>
+              
+              {/* Action Buttons */}
+              <div className="flex gap-3 pt-4 border-t">
+                <button
+                  onClick={() => {
+                    // Apply AI suggestion
+                    setDescription(aiSuggestion.suggestedDescription);
+                    setAiSuggestion(null);
+                  }}
+                  className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 text-white py-3 px-4 rounded-xl font-semibold hover:shadow-lg transition-all"
+                >
+                  ✅ Apply Suggestion
+                </button>
+                <button
+                  onClick={() => setAiSuggestion(null)}
+                  className="flex-1 bg-gray-100 text-gray-700 py-3 px-4 rounded-xl font-semibold hover:bg-gray-200 transition-all"
+                >
+                  ✏️ Edit Manually
+                </button>
+              </div>
+              
+              <p className="text-xs text-center text-gray-400">
+                You can apply the AI suggestion or edit your description manually, then resubmit.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+      
       <div className="mt-20 p-6 space-y-4 min-h-[80vh] flex flex-col items-center bg-gradient-to-br from-pink-50 via-purple-50 to-pink-100">
         <div className="text-center space-y-1">
           <h2 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">

@@ -84,13 +84,23 @@ contract = w3.eth.contract(address=CONTRACT_ADDRESS, abi=CONTRACT_ABI) if CONTRA
 # Helper Functions
 async def verify_incident_with_ai(image_bytes: bytes, title: str, description: str, severity: str) -> dict:
     """
-    Verify if the uploaded image is a valid incident using Gemini AI
-    Returns: {"is_valid": bool, "reason": str, "confidence": str}
+    Verify if the uploaded image matches the reported incident context using Gemini AI.
+    Returns: {
+        "is_valid": bool,
+        "context_matches": bool,
+        "reason": str,
+        "confidence": str,
+        "suggested_title": str (if mismatch),
+        "suggested_description": str (if mismatch),
+        "suggested_severity": str (if mismatch),
+        "detected_incident_type": str
+    }
     """
     if not gemini_model:
         # AI verification disabled - allow all submissions
         return {
             "is_valid": True,
+            "context_matches": True,
             "reason": "AI verification disabled (GEMINI_API_KEY not set)",
             "confidence": "N/A"
         }
@@ -99,39 +109,56 @@ async def verify_incident_with_ai(image_bytes: bytes, title: str, description: s
         # Convert bytes to PIL Image
         image = Image.open(io.BytesIO(image_bytes))
         
-        # Create verification prompt with context
+        # Create verification prompt with context matching
         prompt = f"""You are an AI safety inspector for a women's safety app called NIRBHAYA.
 
-Analyze this image to determine if it shows a valid safety incident/hazard.
+TASK 1: Analyze this image and identify what type of incident/situation it shows.
+TASK 2: Compare your analysis with the user's provided context to check if they match.
 
-Incident Details:
+USER'S PROVIDED CONTEXT:
 - Title: {title}
 - Description: {description}
 - Severity Level: {severity}
 
-Valid incidents include:
-- Harassment or assault situations
-- Unsafe areas (dark alleys, broken streetlights, deserted places)
-- Suspicious activities or individuals
-- Accidents or emergency situations
-- Infrastructure hazards (broken roads, unsafe buildings)
-- Any situation that poses a threat to women's safety
+VALID INCIDENT TYPES (for women's safety app):
+1. Harassment/Assault - Any form of harassment, stalking, or assault
+2. Unsafe Area - Dark alleys, broken streetlights, deserted places, poorly lit areas
+3. Suspicious Activity - Suspicious individuals, unusual behavior, potential threats
+4. Vehicle Accident - Car accidents, road incidents, traffic hazards
+5. Infrastructure Hazard - Broken roads, unsafe buildings, construction dangers
+6. Emergency Situation - Medical emergencies, fire, natural disasters
+7. Crime Scene - Theft, vandalism, violence (but NOT graphic content)
+8. Public Safety Issue - Overcrowding, protests, unsafe gatherings
 
-Invalid submissions include:
+INVALID SUBMISSIONS:
 - Random selfies or personal photos
-- Food, pets, nature photos
+- Food, pets, nature scenery (unless showing a hazard)
 - Screenshots of text or social media
-- Memes or jokes
-- Unrelated content
+- Memes, jokes, or unrelated content
+- Graphic violent/explicit content
+
+INSTRUCTIONS:
+1. First, determine what the image ACTUALLY shows
+2. Then check if the user's title/description MATCHES what you see
+3. If there's a MISMATCH (e.g., user says "murder" but image shows "car accident"), provide corrections
 
 Respond in JSON format:
 {{
-  "is_valid": true/false,
-  "reason": "Brief explanation (max 100 chars)",
-  "confidence": "high/medium/low"
+    "is_valid": true/false (is this a valid safety incident image?),
+    "context_matches": true/false (does user's description match the image?),
+    "detected_incident_type": "What the image actually shows",
+    "reason": "Brief explanation of your decision",
+    "confidence": "high/medium/low",
+    "suggested_title": "Corrected title if mismatch, otherwise null",
+    "suggested_description": "Corrected description if mismatch, otherwise null",
+    "suggested_severity": "Corrected severity (Low/Medium/High/Critical) if needed, otherwise null"
 }}
 
-Be strict but fair. Consider the context provided in title and description."""
+EXAMPLE MISMATCH:
+- User says: "Murder scene" but image shows a car accident
+- Response: is_valid=true, context_matches=false, suggested_title="Vehicle Accident", suggested_description="Car accident/collision incident"
+
+Be helpful and suggest accurate corrections when the image doesn't match the description."""
         
         # Generate AI response
         response = gemini_model.generate_content([prompt, image])
@@ -147,9 +174,16 @@ Be strict but fair. Consider the context provided in title and description."""
         result = json.loads(response_text)
         
         print(f"\n🤖 AI Verification Result:")
-        print(f"   Valid: {result.get('is_valid', False)}")
+        print(f"   Valid Image: {result.get('is_valid', False)}")
+        print(f"   Context Matches: {result.get('context_matches', False)}")
+        print(f"   Detected Type: {result.get('detected_incident_type', 'Unknown')}")
         print(f"   Reason: {result.get('reason', 'No reason provided')}")
-        print(f"   Confidence: {result.get('confidence', 'unknown')}\n")
+        print(f"   Confidence: {result.get('confidence', 'unknown')}")
+        if not result.get('context_matches', True):
+            print(f"   📝 Suggested Title: {result.get('suggested_title', 'N/A')}")
+            print(f"   📝 Suggested Description: {result.get('suggested_description', 'N/A')}")
+            print(f"   📝 Suggested Severity: {result.get('suggested_severity', 'N/A')}")
+        print()
         
         return result
         
@@ -159,6 +193,7 @@ Be strict but fair. Consider the context provided in title and description."""
         # If AI fails to parse, default to allowing submission with warning
         return {
             "is_valid": True,
+            "context_matches": True,
             "reason": "AI verification inconclusive - manual review recommended",
             "confidence": "low"
         }
@@ -167,6 +202,7 @@ Be strict but fair. Consider the context provided in title and description."""
         # On error, default to allowing submission
         return {
             "is_valid": True,
+            "context_matches": True,
             "reason": f"AI verification failed: {str(e)[:50]}",
             "confidence": "error"
         }
@@ -237,11 +273,13 @@ async def submit_incident(
             })
             all_images_bytes += image_bytes
         
-        # Step 2: AI VERIFICATION - Validate incident authenticity
+        # Step 2: AI VERIFICATION - Validate incident authenticity and context match
         print(f"\n🔍 STEP 2: AI VERIFICATION")
         print(f"   Title: {title}")
         print(f"   Description: {description}")
         print(f"   Severity: {severity}")
+        
+        ai_result = {"is_valid": True, "context_matches": True, "confidence": "N/A"}
         
         if first_image_bytes:
             ai_result = await verify_incident_with_ai(
@@ -251,15 +289,34 @@ async def submit_incident(
                 severity
             )
             
-            # Reject submission if AI determines it's invalid
+            # Reject submission if AI determines it's an invalid image (not a safety incident)
             if not ai_result.get("is_valid", False):
                 raise HTTPException(
                     status_code=400,
                     detail={
                         "error": "INVALID_INCIDENT",
-                        "message": "Doesn't look like a valid incident",
+                        "message": "This doesn't appear to be a valid safety incident",
                         "reason": ai_result.get("reason", "Image doesn't match incident criteria"),
-                        "confidence": ai_result.get("confidence", "unknown")
+                        "confidence": ai_result.get("confidence", "unknown"),
+                        "detected_type": ai_result.get("detected_incident_type", "Unknown")
+                    }
+                )
+            
+            # Check if context matches - if not, return suggestions for user to edit
+            if not ai_result.get("context_matches", True):
+                raise HTTPException(
+                    status_code=422,  # Unprocessable Entity - valid image but wrong context
+                    detail={
+                        "error": "CONTEXT_MISMATCH",
+                        "message": "The image doesn't match your description. Please review and correct.",
+                        "reason": ai_result.get("reason", "Description doesn't match image content"),
+                        "detected_type": ai_result.get("detected_incident_type", "Unknown"),
+                        "confidence": ai_result.get("confidence", "unknown"),
+                        "suggestions": {
+                            "title": ai_result.get("suggested_title"),
+                            "description": ai_result.get("suggested_description"),
+                            "severity": ai_result.get("suggested_severity")
+                        }
                     }
                 )
             
@@ -277,7 +334,8 @@ async def submit_incident(
             "timestamp": datetime.utcnow().isoformat(),
             "date": datetime.utcnow().strftime("%d %b %Y"),
             "ai_verified": True if first_image_bytes else False,
-            "ai_confidence": ai_result.get("confidence", "N/A") if first_image_bytes else "N/A"
+            "ai_confidence": ai_result.get("confidence", "N/A") if first_image_bytes else "N/A",
+            "ai_detected_type": ai_result.get("detected_incident_type", "N/A")
         }
         
         # Step 4: Compute combined hash
@@ -468,6 +526,13 @@ async def list_incidents(limit: int = 50, skip: int = 0):
                         doc["metadata"].get("location", {}).get("lat", 0)
                     ],
                     "address": doc["metadata"].get("location", {}).get("address") or doc["metadata"].get("address")
+                },
+                # Include vote data
+                "votes": {
+                    "upvotes": doc.get("votes", {}).get("upvotes", 0),
+                    "downvotes": doc.get("votes", {}).get("downvotes", 0),
+                    "credibility_score": doc.get("votes", {}).get("credibility_score", 100),
+                    "total_votes": doc.get("votes", {}).get("upvotes", 0) + doc.get("votes", {}).get("downvotes", 0)
                 }
             }
             incidents.append(incident)
@@ -548,6 +613,114 @@ async def verify_incident_integrity(incident_id: str):
     
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Verification failed: {str(e)}")
+
+
+@router.post("/vote/{incident_id}")
+async def vote_incident(
+    incident_id: str,
+    vote_type: str,  # "upvote" or "downvote"
+    user_id: str,  # For now, a simple identifier from localStorage
+    user_lat: float = None,  # User's latitude for proximity check
+    user_lng: float = None,  # User's longitude for proximity check
+    max_distance_km: float = 5.0  # Maximum distance allowed to vote
+):
+    """Vote on an incident's accuracy. Only users within range can vote."""
+    from bson import ObjectId
+    import math
+    
+    try:
+        # Validate vote type
+        if vote_type not in ["upvote", "downvote"]:
+            raise HTTPException(status_code=400, detail="Invalid vote type. Use 'upvote' or 'downvote'")
+        
+        # Find the incident
+        doc = await incidents_collection.find_one({"_id": ObjectId(incident_id)})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Incident not found")
+        
+        # Check proximity if location provided
+        if user_lat is not None and user_lng is not None:
+            incident_lat = doc["metadata"].get("location", {}).get("lat", 0)
+            incident_lng = doc["metadata"].get("location", {}).get("lng", 0)
+            
+            # Calculate distance using Haversine formula
+            R = 6371  # Earth's radius in km
+            lat1, lat2 = math.radians(user_lat), math.radians(incident_lat)
+            dlat = math.radians(incident_lat - user_lat)
+            dlng = math.radians(incident_lng - user_lng)
+            
+            a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlng/2)**2
+            c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+            distance_km = R * c
+            
+            if distance_km > max_distance_km:
+                raise HTTPException(
+                    status_code=403, 
+                    detail=f"You must be within {max_distance_km}km of the incident to vote. You are {distance_km:.1f}km away."
+                )
+        
+        # Get current votes
+        votes = doc.get("votes", {"upvotes": 0, "downvotes": 0, "voters": []})
+        voters = votes.get("voters", [])
+        
+        # Check if user already voted
+        existing_vote = next((v for v in voters if v["user_id"] == user_id), None)
+        
+        if existing_vote:
+            if existing_vote["vote_type"] == vote_type:
+                raise HTTPException(status_code=400, detail="You have already voted this way")
+            
+            # Change vote
+            if existing_vote["vote_type"] == "upvote":
+                votes["upvotes"] = max(0, votes.get("upvotes", 0) - 1)
+                votes["downvotes"] = votes.get("downvotes", 0) + 1
+            else:
+                votes["downvotes"] = max(0, votes.get("downvotes", 0) - 1)
+                votes["upvotes"] = votes.get("upvotes", 0) + 1
+            
+            existing_vote["vote_type"] = vote_type
+            existing_vote["voted_at"] = datetime.utcnow().isoformat()
+        else:
+            # New vote
+            if vote_type == "upvote":
+                votes["upvotes"] = votes.get("upvotes", 0) + 1
+            else:
+                votes["downvotes"] = votes.get("downvotes", 0) + 1
+            
+            voters.append({
+                "user_id": user_id,
+                "vote_type": vote_type,
+                "voted_at": datetime.utcnow().isoformat()
+            })
+        
+        votes["voters"] = voters
+        
+        # Calculate credibility score (percentage of upvotes)
+        total_votes = votes["upvotes"] + votes["downvotes"]
+        credibility_score = round((votes["upvotes"] / total_votes) * 100) if total_votes > 0 else 100
+        votes["credibility_score"] = credibility_score
+        
+        # Update the incident
+        await incidents_collection.update_one(
+            {"_id": ObjectId(incident_id)},
+            {"$set": {"votes": votes}}
+        )
+        
+        return {
+            "success": True,
+            "message": f"{vote_type.capitalize()} recorded successfully",
+            "votes": {
+                "upvotes": votes["upvotes"],
+                "downvotes": votes["downvotes"],
+                "credibility_score": credibility_score,
+                "total_votes": total_votes
+            }
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to record vote: {str(e)}")
 
 
 @router.get("/health/check")
