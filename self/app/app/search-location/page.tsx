@@ -786,7 +786,7 @@ const MyMap: React.FC = () => {
   return (
     <div className="flex flex-col h-screen">
       <Nav />
-      <div className="flex flex-1 relative">
+      <div className="flex flex-1 relative mt-24">
         {/* Map */}
         <div className="flex-1">
           {isMapReady ? (
@@ -1209,16 +1209,24 @@ const MyMap: React.FC = () => {
         </div>
 
         {/* Side panel */}
-        <div className="w-96 bg-white shadow-2xl overflow-y-auto p-6 border-r border-purple-100">
-          <h2 className="text-2xl font-bold mb-4">Safe Route Finder</h2>
+        <div className="w-96 bg-white shadow-2xl overflow-y-auto p-4 border-r border-purple-100 h-[calc(100vh-6rem)]">
+          <h2 className="text-xl font-bold mb-3">Safe Route Finder</h2>
 
           {/* Current Location Display */}
-          <div className="mb-4 p-3 bg-gradient-to-br from-purple-50 to-pink-50 rounded-2xl border-2 border-purple-200">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium">📍 Current Location</span>
+          <div className="mb-3 p-2 bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl border border-purple-200">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium">📍 GPS:</span>
+                {currentLocation ? (
+                  <span className="text-xs text-gray-600">
+                    {currentLocation.lat.toFixed(4)}, {currentLocation.lng.toFixed(4)}
+                  </span>
+                ) : (
+                  <span className="text-xs text-gray-500">Loading...</span>
+                )}
+              </div>
               <button
                 onClick={() => {
-                  console.log("🔄 Manually requesting location...");
                   if (navigator.geolocation) {
                     navigator.geolocation.getCurrentPosition(
                       (position) => {
@@ -1233,40 +1241,25 @@ const MyMap: React.FC = () => {
                           latitude: loc.lat,
                           zoom: 16
                         });
-                        console.log("✅ Manual location update:", loc);
-                        console.log("📍 Accuracy:", Math.round(position.coords.accuracy), "meters");
                       },
                       (error) => {
-                        console.error("❌ Manual location error:", error.message);
                         alert("Location error: " + error.message);
                       },
-                      {
-                        enableHighAccuracy: true,
-                        timeout: 15000,
-                        maximumAge: 0
-                      }
+                      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
                     );
                   }
                 }}
-                className="px-3 py-1 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-xs rounded-full hover:shadow-lg transition-all duration-200"
+                className="px-2 py-1 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-xs rounded-full hover:shadow-lg transition-all"
               >
-                🔄 Refresh
+                🔄
               </button>
             </div>
-            {currentLocation ? (
-              <div className="text-xs text-gray-600">
-                <div>Lat: {currentLocation.lat.toFixed(6)}</div>
-                <div>Lng: {currentLocation.lng.toFixed(6)}</div>
-              </div>
-            ) : (
-              <div className="text-xs text-gray-500">Loading...</div>
-            )}
           </div>
 
           {/* Google Maps Style From/To Search */}
-          <div className="mb-4 bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+          <div className="mb-4 bg-white rounded-xl shadow-lg border border-gray-100">
             {/* Header */}
-            <div className="bg-gradient-to-r from-purple-600 to-pink-600 px-4 py-2 flex items-center justify-between">
+            <div className="bg-gradient-to-r from-purple-600 to-pink-600 px-3 py-2 flex items-center justify-between rounded-t-xl">
               <h3 className="text-white font-semibold text-sm">🗺️ Plan Your Safe Route</h3>
               {pickingLocationFor && (
                 <span className="text-white text-xs bg-white/20 px-2 py-1 rounded-full">
@@ -1328,7 +1321,7 @@ const MyMap: React.FC = () => {
                 
                 {/* Start search results */}
                 {activeSearchField === 'start' && startSearchResults.length > 0 && (
-                  <div className="absolute left-8 right-0 mt-1 z-50 border rounded-lg shadow-lg max-h-40 overflow-y-auto bg-white">
+                  <div className="absolute left-0 right-0 mt-1 z-[100] border rounded-lg shadow-xl max-h-48 overflow-y-auto bg-white">
                     {startSearchResults.map((result, index) => (
                       <div
                         key={index}
@@ -1402,7 +1395,7 @@ const MyMap: React.FC = () => {
                 
                 {/* Destination search results */}
                 {activeSearchField === 'end' && searchResults.length > 0 && (
-                  <div className="absolute left-8 right-0 mt-1 z-50 border rounded-lg shadow-lg max-h-40 overflow-y-auto bg-white">
+                  <div className="absolute left-0 right-0 mt-1 z-[100] border rounded-lg shadow-xl max-h-48 overflow-y-auto bg-white">
                     {searchResults.map((result, index) => (
                       <div
                         key={index}
@@ -1431,39 +1424,33 @@ const MyMap: React.FC = () => {
 
           {/* Route info with safety analysis */}
           {routeData && (
-            <div className="mb-4 p-4 bg-gradient-to-br from-purple-50 to-pink-50 rounded-2xl border-2 border-purple-200">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-bold text-lg text-blue-900">
-                  {safetySettings.safetyMode ? '🛡️ Safest Route' : '🚗 Route Information'}
+            <div className="mb-3 p-3 bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl border border-purple-200">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="font-bold text-sm text-gray-800">
+                  {safetySettings.safetyMode ? '🛡️ Safe Route' : '🚗 Route'}
                 </h3>
                 {routeData.safety && (
-                  <div className={`px-3 py-1 rounded-full font-bold text-sm ${
+                  <div className={`px-2 py-0.5 rounded-full font-bold text-xs ${
                     routeData.safety.score >= 80 ? 'bg-green-500 text-white' :
                     routeData.safety.score >= 60 ? 'bg-yellow-500 text-white' :
                     'bg-red-500 text-white'
                   }`}>
-                    Safety: {routeData.safety.score}/100
+                    {routeData.safety.score}/100
                   </div>
                 )}
               </div>
 
-              <div className="space-y-2 mb-3">
-                <p className="text-sm flex justify-between">
-                  <span className="font-semibold text-gray-700">Distance:</span>
-                  <span className="text-gray-900">{(routeData.distance / 1000).toFixed(2)} km</span>
-                </p>
-                <p className="text-sm flex justify-between">
-                  <span className="font-semibold text-gray-700">Duration:</span>
-                  <span className="text-gray-900">{Math.round(routeData.duration / 60)} min</span>
-                </p>
+              <div className="flex gap-4 text-xs mb-2">
+                <span><strong>{(routeData.distance / 1000).toFixed(1)}</strong> km</span>
+                <span><strong>{Math.round(routeData.duration / 60)}</strong> min</span>
               </div>
 
               {/* Safety warnings */}
               {routeData.safety && routeData.safety.warnings.length > 0 && (
-                <div className="mb-3 p-3 bg-yellow-50 border-l-4 border-yellow-400 rounded">
-                  <p className="font-semibold text-sm text-yellow-800 mb-1">⚠️ Safety Alerts:</p>
-                  <ul className="text-xs space-y-1 text-yellow-700">
-                    {routeData.safety.warnings.map((warning: string, idx: number) => (
+                <div className="p-2 bg-yellow-50 border-l-2 border-yellow-400 rounded text-xs mb-2">
+                  <p className="font-semibold text-yellow-800 mb-1">⚠️ Alerts:</p>
+                  <ul className="space-y-0.5 text-yellow-700">
+                    {routeData.safety.warnings.slice(0, 3).map((warning: string, idx: number) => (
                       <li key={idx}>{warning}</li>
                     ))}
                   </ul>
@@ -1472,10 +1459,10 @@ const MyMap: React.FC = () => {
 
               {/* Nearby incidents details */}
               {routeData.safety && routeData.safety.nearbyIncidents.length > 0 && (
-                <div className="mb-3 p-3 bg-white border border-gray-200 rounded-lg">
-                  <p className="font-semibold text-sm text-gray-800 mb-2">📍 Nearby Incidents:</p>
-                  <div className="space-y-2 max-h-40 overflow-y-auto">
-                    {routeData.safety.nearbyIncidents.map((ni: any, idx: number) => (
+                <div className="p-2 bg-white border border-gray-200 rounded text-xs">
+                  <p className="font-semibold text-gray-800 mb-1">📍 {routeData.safety.nearbyIncidents.length} Incidents Near Route</p>
+                  <div className="space-y-1 max-h-24 overflow-y-auto">
+                    {routeData.safety.nearbyIncidents.slice(0, 5).map((ni: any, idx: number) => (
                       <div key={idx} className="text-xs p-2 bg-gray-50 rounded border-l-3" style={{
                         borderLeftColor: getSeverityColor(ni.incident.severity),
                         borderLeftWidth: '3px'
@@ -1607,60 +1594,57 @@ const MyMap: React.FC = () => {
             </div>
           </div>
 
-          {/* Nearby Incidents Feature - Like Tinder/Food Delivery Apps */}
-          <div className="mt-4 space-y-3 bg-gradient-to-br from-purple-50 to-indigo-50 p-4 rounded-2xl border-2 border-purple-200 shadow-sm">
-            <div className="flex items-center justify-between border-b border-purple-200 pb-2">
-              <h3 className="font-bold text-lg text-purple-900 flex items-center gap-2">
-                🔍 Nearby Incidents
-              </h3>
-              <span className="text-xs bg-purple-600 text-white px-2 py-1 rounded-full font-semibold">
-                {nearbyIncidents.length} found
+          {/* Nearby Incidents Feature */}
+          <div className="mt-3 space-y-2 bg-gradient-to-br from-purple-50 to-indigo-50 p-3 rounded-xl border border-purple-200">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-sm text-purple-900">🔍 Nearby Incidents</h3>
+              <span className="text-xs bg-purple-600 text-white px-2 py-0.5 rounded-full font-semibold">
+                {nearbyIncidents.length}
               </span>
             </div>
 
             {/* Location Mode Toggle */}
-            <div className="space-y-2">
-              <label className="text-sm font-semibold text-purple-900 block">📍 Reference Location</label>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => {
-                    setNearbySettings(prev => ({ ...prev, useCustomLocation: false, isPickingLocation: false }));
-                  }}
-                  className={`flex-1 px-3 py-2 text-xs rounded-lg font-medium transition-all ${
-                    !nearbySettings.useCustomLocation
-                      ? 'bg-purple-600 text-white shadow-md'
-                      : 'bg-white text-purple-700 border border-purple-300 hover:bg-purple-50'
-                  }`}
-                >
-                  🎯 My Location
-                </button>
-                <button
-                  onClick={() => {
-                    setNearbySettings(prev => ({ ...prev, isPickingLocation: true }));
-                  }}
-                  className={`flex-1 px-3 py-2 text-xs rounded-lg font-medium transition-all ${
-                    nearbySettings.isPickingLocation
-                      ? 'bg-orange-500 text-white shadow-md animate-pulse'
-                      : nearbySettings.useCustomLocation
-                        ? 'bg-purple-600 text-white shadow-md'
-                        : 'bg-white text-purple-700 border border-purple-300 hover:bg-purple-50'
-                  }`}
-                >
-                  {nearbySettings.isPickingLocation ? '👆 Click Map...' : '📌 Custom'}
-                </button>
-              </div>
-              {nearbySettings.useCustomLocation && nearbySettings.customLocation && (
-                <div className="text-xs text-purple-700 bg-purple-100 px-3 py-2 rounded-lg">
-                  <span className="font-medium">Custom:</span> {nearbySettings.customLocation.lat.toFixed(4)}, {nearbySettings.customLocation.lng.toFixed(4)}
-                </div>
-              )}
+            <div className="flex gap-1">
+              <button
+                onClick={() => {
+                  setNearbySettings(prev => ({ ...prev, useCustomLocation: false, isPickingLocation: false }));
+                }}
+                className={`flex-1 px-2 py-1.5 text-xs rounded-lg font-medium transition-all ${
+                  !nearbySettings.useCustomLocation
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-white text-purple-700 border border-purple-300'
+                }`}
+              >
+                🎯 GPS
+              </button>
+              <button
+                onClick={() => {
+                  setNearbySettings(prev => ({ ...prev, isPickingLocation: true }));
+                }}
+                className={`flex-1 px-2 py-1.5 text-xs rounded-lg font-medium transition-all ${
+                  nearbySettings.isPickingLocation
+                    ? 'bg-orange-500 text-white animate-pulse'
+                    : nearbySettings.useCustomLocation
+                      ? 'bg-purple-600 text-white'
+                      : 'bg-white text-purple-700 border border-purple-300'
+                }`}
+              >
+                {nearbySettings.isPickingLocation ? '👆 Click...' : '📌 Custom'}
+              </button>
             </div>
 
-            {/* Radius Slider - Like Tinder Distance */}
-            <div className="space-y-2">
+            {/* Custom location display */}
+            {nearbySettings.useCustomLocation && nearbySettings.customLocation && (
+              <div className="text-xs text-purple-700 bg-purple-100 px-2 py-1 rounded-lg">
+                📍 {nearbySettings.customLocation.lat.toFixed(4)}, {nearbySettings.customLocation.lng.toFixed(4)}
+              </div>
+            )}
+
+            {/* Radius Slider */}
+            <div className="space-y-1">
               <div className="flex items-center justify-between">
-                <label htmlFor="radius-slider" className="text-sm font-semibold text-purple-900">📏 Search Radius</label>
-                <span className="text-sm font-bold text-purple-700 bg-purple-100 px-3 py-1 rounded-full">
+                <label htmlFor="radius-slider" className="text-xs font-semibold text-purple-900">📏 Radius</label>
+                <span className="text-xs font-bold text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full">
                   {nearbySettings.radiusKm} km
                 </span>
               </div>
@@ -1671,51 +1655,43 @@ const MyMap: React.FC = () => {
                 max="20"
                 value={nearbySettings.radiusKm}
                 onChange={(e) => setNearbySettings(prev => ({ ...prev, radiusKm: Number(e.target.value) }))}
-                className="w-full h-2 bg-purple-200 rounded-lg appearance-none cursor-pointer accent-purple-600"
+                className="w-full h-1.5 bg-purple-200 rounded-lg appearance-none cursor-pointer accent-purple-600"
                 title={`Search radius: ${nearbySettings.radiusKm} km`}
               />
-              <div className="flex justify-between text-xs text-purple-500">
-                <span>1 km</span>
-                <span>10 km</span>
-                <span>20 km</span>
-              </div>
             </div>
 
-            {/* Sort Options */}
-            <div className="space-y-2">
-              <label className="text-sm font-semibold text-purple-900 block">🔢 Sort By</label>
-              <div className="flex gap-2">
-                {[
-                  { key: 'distance', label: '📍 Distance', icon: '📍' },
-                  { key: 'severity', label: '⚠️ Severity', icon: '⚠️' },
-                  { key: 'time', label: '🕐 Recent', icon: '🕐' },
-                ].map(({ key, label }) => (
-                  <button
-                    key={key}
-                    onClick={() => setNearbySettings(prev => ({ ...prev, sortBy: key as 'distance' | 'severity' | 'time' }))}
-                    className={`flex-1 px-2 py-1.5 text-xs rounded-lg font-medium transition-all ${
-                      nearbySettings.sortBy === key
-                        ? 'bg-purple-600 text-white shadow-md'
-                        : 'bg-white text-purple-700 border border-purple-300 hover:bg-purple-50'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
+            {/* Sort Options - Compact */}
+            <div className="flex gap-1">
+              {[
+                { key: 'distance', label: '📍' },
+                { key: 'severity', label: '⚠️' },
+                { key: 'time', label: '🕐' },
+              ].map(({ key, label }) => (
+                <button
+                  key={key}
+                  onClick={() => setNearbySettings(prev => ({ ...prev, sortBy: key as 'distance' | 'severity' | 'time' }))}
+                  title={`Sort by ${key}`}
+                  className={`flex-1 px-2 py-1 text-xs rounded-lg font-medium transition-all ${
+                    nearbySettings.sortBy === key
+                      ? 'bg-purple-600 text-white'
+                      : 'bg-white text-purple-700 border border-purple-300'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
 
             {/* Nearby Incidents List */}
-            <div className="space-y-2 max-h-64 overflow-y-auto">
+            <div className="space-y-1.5 max-h-48 overflow-y-auto">
               {!currentLocation && !nearbySettings.customLocation ? (
-                <div className="text-center py-4 text-sm text-purple-500">
+                <div className="text-center py-2 text-xs text-purple-500">
                   📍 Waiting for location...
                 </div>
               ) : nearbyIncidents.length === 0 ? (
-                <div className="text-center py-4">
-                  <div className="text-3xl mb-2">✅</div>
-                  <div className="text-sm text-green-600 font-medium">No incidents within {nearbySettings.radiusKm} km</div>
-                  <div className="text-xs text-gray-500 mt-1">This area appears safe!</div>
+                <div className="text-center py-2">
+                  <div className="text-xl">✅</div>
+                  <div className="text-xs text-green-600 font-medium">No incidents within {nearbySettings.radiusKm} km</div>
                 </div>
               ) : (
                 nearbyIncidents.map((incident, idx) => (
@@ -1729,18 +1705,18 @@ const MyMap: React.FC = () => {
                         zoom: 16
                       });
                     }}
-                    className={`p-3 rounded-xl cursor-pointer transition-all hover:shadow-md border-l-4 ${
+                    className={`p-2 rounded-lg cursor-pointer transition-all hover:shadow-sm border-l-3 ${
                       incident.severity === 'high'
-                        ? 'bg-red-50 border-red-500 hover:bg-red-100'
+                        ? 'bg-red-50 border-red-500'
                         : incident.severity === 'medium'
-                          ? 'bg-orange-50 border-orange-500 hover:bg-orange-100'
-                          : 'bg-yellow-50 border-yellow-500 hover:bg-yellow-100'
+                          ? 'bg-orange-50 border-orange-500'
+                          : 'bg-yellow-50 border-yellow-500'
                     }`}
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                        <div className="flex items-center gap-1 flex-wrap">
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
                             incident.severity === 'high'
                               ? 'bg-red-500 text-white'
                               : incident.severity === 'medium'
@@ -1749,68 +1725,56 @@ const MyMap: React.FC = () => {
                           }`}>
                             {incident.severity.toUpperCase()}
                           </span>
-                          <span className="text-xs text-gray-500">{incident.date}</span>
-                          {/* Credibility Score Badge */}
+                          <span className="text-[10px] text-gray-500">{incident.date}</span>
                           {incident.votes && incident.votes.total_votes > 0 && (
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                            <span className={`text-[10px] px-1 py-0.5 rounded font-medium ${
                               incident.votes.credibility_score >= 70 
                                 ? 'bg-green-100 text-green-700' 
                                 : incident.votes.credibility_score >= 40 
                                   ? 'bg-yellow-100 text-yellow-700' 
                                   : 'bg-red-100 text-red-700'
                             }`}>
-                              {incident.votes.credibility_score}% verified
+                              {incident.votes.credibility_score}%
                             </span>
                           )}
                         </div>
-                        <h4 className="text-sm font-semibold text-gray-800 line-clamp-1">
+                        <h4 className="text-xs font-semibold text-gray-800 line-clamp-1 mt-0.5">
                           {incident.title || 'Incident'}
                         </h4>
-                        {incident.description && (
-                          <p className="text-xs text-gray-600 mt-1 line-clamp-2">
-                            {incident.description}
-                          </p>
-                        )}
                         
-                        {/* Voting Buttons */}
-                        <div className="flex items-center gap-2 mt-2" onClick={e => e.stopPropagation()}>
+                        {/* Compact Voting */}
+                        <div className="flex items-center gap-1 mt-1" onClick={e => e.stopPropagation()}>
                           <button
                             onClick={(e) => handleVote(String(incident.id), 'upvote', e)}
                             disabled={votingIncidentId === String(incident.id)}
-                            className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-all ${
+                            className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium ${
                               userVotes[String(incident.id)] === 'upvote'
                                 ? 'bg-green-500 text-white'
-                                : 'bg-green-100 text-green-700 hover:bg-green-200'
-                            } ${votingIncidentId === String(incident.id) ? 'opacity-50 cursor-wait' : ''}`}
+                                : 'bg-green-100 text-green-700'
+                            }`}
                           >
-                            <span>👍</span>
-                            <span>{incident.votes?.upvotes || 0}</span>
+                            👍 {incident.votes?.upvotes || 0}
                           </button>
                           <button
                             onClick={(e) => handleVote(String(incident.id), 'downvote', e)}
                             disabled={votingIncidentId === String(incident.id)}
-                            className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-all ${
+                            className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium ${
                               userVotes[String(incident.id)] === 'downvote'
                                 ? 'bg-red-500 text-white'
-                                : 'bg-red-100 text-red-700 hover:bg-red-200'
-                            } ${votingIncidentId === String(incident.id) ? 'opacity-50 cursor-wait' : ''}`}
+                                : 'bg-red-100 text-red-700'
+                            }`}
                           >
-                            <span>👎</span>
-                            <span>{incident.votes?.downvotes || 0}</span>
+                            👎 {incident.votes?.downvotes || 0}
                           </button>
-                          <span className="text-xs text-gray-400 ml-1">
-                            {incident.votes?.total_votes || 0} votes
-                          </span>
                         </div>
                       </div>
-                      <div className="text-right ml-2">
-                        <div className="text-lg font-bold text-purple-600">
+                      <div className="text-right ml-1">
+                        <div className="text-xs font-bold text-purple-600">
                           {incident.distanceKm < 1
                             ? `${Math.round(incident.distanceKm * 1000)}m`
                             : `${incident.distanceKm.toFixed(1)}km`
                           }
                         </div>
-                        <div className="text-xs text-gray-400">away</div>
                       </div>
                     </div>
                   </div>
