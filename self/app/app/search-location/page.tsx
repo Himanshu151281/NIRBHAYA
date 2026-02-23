@@ -508,41 +508,216 @@ const MyMap: React.FC = () => {
     }
   };
 
-  // Get route using Mapbox Directions API with safety optimization
-  const getRoute = async (start: {lat: number; lng: number}, end: CustomDestination) => {
-    try {
-      // Request multiple alternative routes for safety comparison
-      const response = await fetch(
-        `https://api.mapbox.com/directions/v5/mapbox/driving/${start.lng},${start.lat};${end.lng},${end.lat}?geometries=geojson&alternatives=true&steps=true&access_token=${MAPBOX_TOKEN}`
-      );
-      const data = await response.json();
+  // ============================================
+  // INCIDENT AVOIDANCE ROUTING - WORKING IMPLEMENTATION
+  // Mapbox doesn't support custom exclusion polygons, so we:
+  // 1. Get multiple route alternatives
+  // 2. REJECT routes that pass through danger zones
+  // 3. If all routes unsafe, inject waypoints to force avoidance
+  // ============================================
+
+  // Check if a route passes through any danger zone
+  const routePassesThroughDanger = (
+    routeCoordinates: [number, number][],
+    incidents: HarassmentIncident[]
+  ): { passes: boolean; violatingIncidents: HarassmentIncident[] } => {
+    const violatingIncidents: HarassmentIncident[] = [];
+
+    for (const incident of incidents) {
+      const dangerRadius = getSeverityRadius(incident.severity);
       
-      if (data.routes && data.routes.length > 0) {
-        if (safetySettings.safetyMode) {
-          // Calculate safety score for each route
-          const routesWithSafety = data.routes.map((route: any) => {
-            const coordinates = route.geometry.coordinates;
-            const safety = calculateRouteSafety(coordinates);
-            return { ...route, safety };
-          });
-
-          // Sort by safety score (highest first)
-          routesWithSafety.sort((a: any, b: any) => b.safety.score - a.safety.score);
-
-          console.log("🛣️ Route Safety Analysis:");
-          routesWithSafety.forEach((route: any, index: number) => {
-            console.log(`  Route ${index + 1}: Safety ${route.safety.score}/100, Distance ${(route.distance / 1000).toFixed(1)}km, Duration ${Math.round(route.duration / 60)}min`);
-          });
-
-          // Select safest route
-          const safestRoute = routesWithSafety[0];
-          console.log(`✅ Selected safest route with score: ${safestRoute.safety.score}/100`);
-          setRouteData(safestRoute);
-        } else {
-          // Safety mode off - use shortest route
-          setRouteData(data.routes[0]);
+      // Sample route points (every 5th point for performance)
+      for (let i = 0; i < routeCoordinates.length; i += 5) {
+        const [lng, lat] = routeCoordinates[i];
+        const distance = calculateDistance(lat, lng, incident.lat, incident.lng);
+        
+        if (distance < dangerRadius) {
+          if (!violatingIncidents.find(v => v.id === incident.id)) {
+            violatingIncidents.push(incident);
+          }
+          break; // Found violation for this incident, move to next
         }
       }
+    }
+
+    return { passes: violatingIncidents.length > 0, violatingIncidents };
+  };
+
+  // Calculate avoidance waypoint - perpendicular offset from incident
+  const calculateAvoidanceWaypoint = (
+    start: { lat: number; lng: number },
+    end: { lat: number; lng: number },
+    incident: HarassmentIncident
+  ): { lat: number; lng: number } => {
+    const dangerRadius = getSeverityRadius(incident.severity);
+    const avoidanceDistance = dangerRadius * 2.5; // Go 2.5x the danger radius away
+
+    // Calculate direction from start to end
+    const dx = end.lng - start.lng;
+    const dy = end.lat - start.lat;
+    const length = Math.sqrt(dx * dx + dy * dy);
+
+    // Perpendicular direction (rotate 90 degrees)
+    const perpX = -dy / length;
+    const perpY = dx / length;
+
+    // Convert distance to degrees (approximate)
+    const latOffset = (avoidanceDistance / 111320) * perpY;
+    const lngOffset = (avoidanceDistance / (111320 * Math.cos(incident.lat * Math.PI / 180))) * perpX;
+
+    // Determine which side to offset (away from the route line)
+    // Use the side that's further from both start and end
+    const waypoint1 = { lat: incident.lat + latOffset, lng: incident.lng + lngOffset };
+    const waypoint2 = { lat: incident.lat - latOffset, lng: incident.lng - lngOffset };
+
+    const dist1 = Math.min(
+      calculateDistance(waypoint1.lat, waypoint1.lng, start.lat, start.lng),
+      calculateDistance(waypoint1.lat, waypoint1.lng, end.lat, end.lng)
+    );
+    const dist2 = Math.min(
+      calculateDistance(waypoint2.lat, waypoint2.lng, start.lat, start.lng),
+      calculateDistance(waypoint2.lat, waypoint2.lng, end.lat, end.lng)
+    );
+
+    return dist1 > dist2 ? waypoint1 : waypoint2;
+  };
+
+  // Main routing function with TRUE incident avoidance
+  const getRoute = async (start: {lat: number; lng: number}, end: CustomDestination) => {
+    try {
+      const dangerousIncidents = harassmentIncidents.filter(
+        i => i.severity === 'high' || i.severity === 'medium'
+      );
+
+      console.log(`🗺️ Requesting routes (${dangerousIncidents.length} danger zones to avoid)...`);
+
+      // ============================================
+      // PHASE 1: Get initial routes from Mapbox
+      // ============================================
+      const baseUrl = `https://api.mapbox.com/directions/v5/mapbox/driving/` +
+        `${start.lng},${start.lat};${end.lng},${end.lat}` +
+        `?geometries=geojson&alternatives=true&steps=true&access_token=${MAPBOX_TOKEN}`;
+
+      const response = await fetch(baseUrl);
+      const data = await response.json();
+
+      if (!data.routes || data.routes.length === 0) {
+        console.error("❌ No routes found");
+        return;
+      }
+
+      if (!safetySettings.safetyMode || dangerousIncidents.length === 0) {
+        // Safety mode off - use shortest route
+        setRouteData(data.routes[0]);
+        return;
+      }
+
+      // ============================================
+      // PHASE 2: Filter out routes that pass through danger zones
+      // ============================================
+      console.log("🔍 Checking routes against danger zones...");
+      
+      const safeRoutes: any[] = [];
+      const unsafeRoutes: any[] = [];
+
+      for (const route of data.routes) {
+        const { passes, violatingIncidents } = routePassesThroughDanger(
+          route.geometry.coordinates,
+          dangerousIncidents
+        );
+
+        if (!passes) {
+          const safety = calculateRouteSafety(route.geometry.coordinates);
+          safeRoutes.push({ ...route, safety, isSafe: true });
+          console.log(`  ✅ Route ${safeRoutes.length}: SAFE - ${(route.distance / 1000).toFixed(1)}km`);
+        } else {
+          unsafeRoutes.push({ route, violatingIncidents });
+          console.log(`  ❌ Route passes through ${violatingIncidents.length} danger zone(s)`);
+        }
+      }
+
+      // ============================================
+      // PHASE 3: If safe route exists, use it
+      // ============================================
+      if (safeRoutes.length > 0) {
+        // Sort by safety score
+        safeRoutes.sort((a, b) => b.safety.score - a.safety.score);
+        const bestRoute = safeRoutes[0];
+        console.log(`🛡️ Selected safe route: Safety ${bestRoute.safety.score}/100, Distance ${(bestRoute.distance / 1000).toFixed(1)}km`);
+        setRouteData(bestRoute);
+        return;
+      }
+
+      // ============================================
+      // PHASE 4: All routes unsafe - inject waypoints to force avoidance
+      // ============================================
+      console.log("⚠️ All routes pass through danger zones - generating avoidance route...");
+
+      // Get the most problematic incidents from the shortest route
+      const shortestUnsafe = unsafeRoutes[0];
+      const incidentsToAvoid = shortestUnsafe.violatingIncidents.slice(0, 3); // Max 3 waypoints
+
+      // Calculate avoidance waypoints
+      const waypoints = incidentsToAvoid.map((incident: HarassmentIncident) => 
+        calculateAvoidanceWaypoint(start, { lat: end.lat, lng: end.lng }, incident)
+      );
+
+      // Sort waypoints by distance from start
+      waypoints.sort((a: {lat: number; lng: number}, b: {lat: number; lng: number}) => {
+        const distA = calculateDistance(start.lat, start.lng, a.lat, a.lng);
+        const distB = calculateDistance(start.lat, start.lng, b.lat, b.lng);
+        return distA - distB;
+      });
+
+      console.log(`🔀 Adding ${waypoints.length} avoidance waypoint(s):`);
+      waypoints.forEach((wp: {lat: number; lng: number}, i: number) => {
+        console.log(`   ${i + 1}. [${wp.lat.toFixed(4)}, ${wp.lng.toFixed(4)}]`);
+      });
+
+      // Build route with waypoints
+      const waypointsStr = waypoints.map((wp: {lat: number; lng: number}) => `${wp.lng},${wp.lat}`).join(';');
+      const avoidanceUrl = `https://api.mapbox.com/directions/v5/mapbox/driving/` +
+        `${start.lng},${start.lat};${waypointsStr};${end.lng},${end.lat}` +
+        `?geometries=geojson&alternatives=false&steps=true&access_token=${MAPBOX_TOKEN}`;
+
+      const avoidanceResponse = await fetch(avoidanceUrl);
+      const avoidanceData = await avoidanceResponse.json();
+
+      if (avoidanceData.routes && avoidanceData.routes.length > 0) {
+        const avoidanceRoute = avoidanceData.routes[0];
+        
+        // Verify the new route is actually safe
+        const { passes, violatingIncidents } = routePassesThroughDanger(
+          avoidanceRoute.geometry.coordinates,
+          dangerousIncidents
+        );
+
+        if (!passes) {
+          const safety = calculateRouteSafety(avoidanceRoute.geometry.coordinates);
+          console.log(`✅ Avoidance route successful: Safety ${safety.score}/100, Distance ${(avoidanceRoute.distance / 1000).toFixed(1)}km`);
+          setRouteData({ ...avoidanceRoute, safety, isSafe: true, usedWaypoints: true });
+        } else {
+          // Still unsafe - use least bad route with warning
+          console.warn(`⚠️ Could not find fully safe route. Showing least dangerous option.`);
+          const safety = calculateRouteSafety(avoidanceRoute.geometry.coordinates);
+          setRouteData({ 
+            ...avoidanceRoute, 
+            safety: { ...safety, warnings: [`⚠️ Route passes near ${violatingIncidents.length} incident(s) - proceed with caution`] },
+            isSafe: false 
+          });
+        }
+      } else {
+        // Fallback to original shortest route with warning
+        console.warn("⚠️ Avoidance routing failed - using original route with warnings");
+        const originalRoute = data.routes[0];
+        const safety = calculateRouteSafety(originalRoute.geometry.coordinates);
+        setRouteData({ 
+          ...originalRoute, 
+          safety: { ...safety, warnings: ["⚠️ Could not avoid all danger zones - proceed with caution"] },
+          isSafe: false 
+        });
+      }
+
     } catch (error) {
       console.error("Route error:", error);
     }
@@ -585,6 +760,124 @@ const MyMap: React.FC = () => {
       default:
         return safetySettings.safetyBuffer;
     }
+  };
+
+  // ============================================
+  // INCIDENT EXCLUSION POLYGON HELPERS
+  // ============================================
+
+  // Create circular polygon coordinates around an incident point
+  const createExclusionPolygon = (
+    lat: number,
+    lng: number,
+    radiusMeters: number,
+    points: number = 12
+  ): [number, number][] => {
+    const coordinates: [number, number][] = [];
+    const earthRadius = 6371000; // meters
+
+    for (let i = 0; i <= points; i++) {
+      const angle = (i / points) * 2 * Math.PI;
+      const dLat = (radiusMeters / earthRadius) * Math.cos(angle) * (180 / Math.PI);
+      const dLng = (radiusMeters / (earthRadius * Math.cos(lat * Math.PI / 180))) *
+                   Math.sin(angle) * (180 / Math.PI);
+      coordinates.push([lng + dLng, lat + dLat]);
+    }
+
+    return coordinates;
+  };
+
+  // Encode polygon to Mapbox polyline format
+  const encodePolyline = (coordinates: [number, number][]): string => {
+    let encoded = '';
+    let prevLat = 0;
+    let prevLng = 0;
+
+    coordinates.forEach(([lng, lat]) => {
+      // Mapbox uses [lat, lng] order for polyline encoding
+      const latE5 = Math.round(lat * 1e5);
+      const lngE5 = Math.round(lng * 1e5);
+
+      const dLat = latE5 - prevLat;
+      const dLng = lngE5 - prevLng;
+
+      prevLat = latE5;
+      prevLng = lngE5;
+
+      encoded += encodeNumber(dLat) + encodeNumber(dLng);
+    });
+
+    return encoded;
+  };
+
+  // Helper to encode a single number for polyline
+  const encodeNumber = (num: number): string => {
+    let value = num < 0 ? ~(num << 1) : (num << 1);
+    let encoded = '';
+    
+    while (value >= 0x20) {
+      encoded += String.fromCharCode((0x20 | (value & 0x1f)) + 63);
+      value >>= 5;
+    }
+    encoded += String.fromCharCode(value + 63);
+    
+    return encoded;
+  };
+
+  // Calculate distance from a point to a line segment (for prioritizing incidents on route path)
+  const pointToLineDistance = (
+    point: { lat: number; lng: number },
+    lineStart: { lat: number; lng: number },
+    lineEnd: { lat: number; lng: number }
+  ): number => {
+    const A = point.lat - lineStart.lat;
+    const B = point.lng - lineStart.lng;
+    const C = lineEnd.lat - lineStart.lat;
+    const D = lineEnd.lng - lineStart.lng;
+
+    const dot = A * C + B * D;
+    const lenSq = C * C + D * D;
+    let param = -1;
+
+    if (lenSq !== 0) param = dot / lenSq;
+
+    let xx, yy;
+    if (param < 0) {
+      xx = lineStart.lat;
+      yy = lineStart.lng;
+    } else if (param > 1) {
+      xx = lineEnd.lat;
+      yy = lineEnd.lng;
+    } else {
+      xx = lineStart.lat + param * C;
+      yy = lineStart.lng + param * D;
+    }
+
+    return calculateDistance(point.lat, point.lng, xx, yy);
+  };
+
+  // Select the most critical incidents to exclude (Mapbox limit: 3 polygons)
+  const selectCriticalExclusions = (
+    incidents: HarassmentIncident[],
+    start: { lat: number; lng: number },
+    end: { lat: number; lng: number }
+  ): HarassmentIncident[] => {
+    return incidents
+      .map(incident => {
+        // Distance from incident to the direct line between start and end
+        const distanceToRoute = pointToLineDistance(incident, start, end);
+
+        // Severity weight (higher = more critical)
+        const severityWeight = incident.severity === 'high' ? 100 :
+                               incident.severity === 'medium' ? 50 : 10;
+
+        // Priority: high severity + close to route = high priority
+        const priority = severityWeight / (distanceToRoute + 100); // +100 to avoid division issues
+
+        return { ...incident, priority };
+      })
+      .sort((a, b) => (b as any).priority - (a as any).priority)
+      .slice(0, 3); // Mapbox limit: max 3 exclusion polygons
   };
 
   // Calculate distance between two points (Haversine formula)

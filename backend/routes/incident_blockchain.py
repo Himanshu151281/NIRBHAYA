@@ -25,7 +25,7 @@ load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-    gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+    gemini_model = genai.GenerativeModel('gemini-2.5-flash')
 else:
     print("Warning: GEMINI_API_KEY not set - AI verification disabled")
     gemini_model = None
@@ -73,6 +73,13 @@ CONTRACT_ABI = [
             {"internalType": "uint256", "name": "timestamp", "type": "uint256"},
             {"internalType": "bool", "name": "verified", "type": "bool"}
         ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "incidentCount",
+        "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
         "stateMutability": "view",
         "type": "function"
     }
@@ -393,23 +400,30 @@ async def submit_incident(
                 blockchain_submitted = True
                 
                 # Extract incident ID from transaction logs
-                # The submitIncident function returns the incident ID
+                # The IncidentSubmitted event has incidentId as first indexed parameter (topics[1])
                 try:
-                    # Get the transaction receipt and decode the return value
-                    tx_receipt = w3.eth.get_transaction_receipt(tx_hash)
-                    # For Solidity functions that return values, we need to decode logs
-                    # The incident ID is the return value, typically in logs or we can call the contract
-                    # Get the latest incident count from the contract (incident IDs are sequential starting from 0)
-                    # We'll use the logs to get the exact incident ID
-                    if tx_receipt['logs']:
-                        # The return value is typically the first log topic or data
-                        # For now, we'll use block number and transaction index as a unique identifier
-                        blockchain_incident_id = int(receipt['blockNumber']) * 10000 + int(receipt['transactionIndex'])
+                    if receipt['logs']:
+                        for log in receipt['logs']:
+                            # Check if this log is from our contract
+                            if log['address'].lower() == CONTRACT_ADDRESS.lower():
+                                # IncidentSubmitted event: topics[0] = event signature, topics[1] = incidentId (indexed)
+                                if len(log['topics']) >= 2:
+                                    # incidentId is uint256 indexed, stored in topics[1]
+                                    blockchain_incident_id = int(log['topics'][1].hex(), 16)
+                                    break
+                        else:
+                            # Fallback: get incidentCount - 1 from contract (just submitted)
+                            blockchain_incident_id = contract.functions.incidentCount().call() - 1
                     else:
-                        blockchain_incident_id = None
+                        # Fallback: get incidentCount - 1 from contract
+                        blockchain_incident_id = contract.functions.incidentCount().call() - 1
                 except Exception as id_error:
                     print(f"⚠️  Could not extract incident ID: {id_error}")
-                    blockchain_incident_id = None
+                    # Final fallback
+                    try:
+                        blockchain_incident_id = contract.functions.incidentCount().call() - 1
+                    except:
+                        blockchain_incident_id = None
                 
                 print(f"\n{'='*60}")
                 print(f"✅ BLOCKCHAIN TX SUCCESSFUL!")

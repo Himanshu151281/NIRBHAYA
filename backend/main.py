@@ -51,7 +51,7 @@ if GEMINI_KEY:
     try:
         import google.generativeai as genai
         genai.configure(api_key=GEMINI_KEY)
-        gemini_client = genai.GenerativeModel('gemini-pro')
+        gemini_client = genai.GenerativeModel('gemini-2.5-flash')
     except ImportError:
         print("Warning: google-generativeai package not installed. Install with: pip install google-generativeai")
 else:
