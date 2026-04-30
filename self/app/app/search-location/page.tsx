@@ -516,29 +516,98 @@ const MyMap: React.FC = () => {
   // 3. If all routes unsafe, inject waypoints to force avoidance
   // ============================================
 
+  // Distance from a point (lat/lng) to a route segment (lat/lng) in meters.
+  // Uses an equirectangular projection for speed; accurate enough at city scale.
+  const pointToSegmentDistanceMeters = (
+    pointLat: number,
+    pointLng: number,
+    aLat: number,
+    aLng: number,
+    bLat: number,
+    bLng: number
+  ): number => {
+    const R = 6371000; // meters
+    const toRad = (d: number) => (d * Math.PI) / 180;
+
+    const lat0 = toRad(pointLat);
+
+    const px = R * toRad(pointLng) * Math.cos(lat0);
+    const py = R * toRad(pointLat);
+    const ax = R * toRad(aLng) * Math.cos(lat0);
+    const ay = R * toRad(aLat);
+    const bx = R * toRad(bLng) * Math.cos(lat0);
+    const by = R * toRad(bLat);
+
+    const abx = bx - ax;
+    const aby = by - ay;
+    const apx = px - ax;
+    const apy = py - ay;
+    const abLenSq = abx * abx + aby * aby;
+
+    let t = 0;
+    if (abLenSq > 0) {
+      t = (apx * abx + apy * aby) / abLenSq;
+      t = Math.max(0, Math.min(1, t));
+    }
+
+    const cx = ax + t * abx;
+    const cy = ay + t * aby;
+    const dx = px - cx;
+    const dy = py - cy;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
   // Check if a route passes through any danger zone
   const routePassesThroughDanger = (
     routeCoordinates: [number, number][],
     incidents: HarassmentIncident[]
-  ): { passes: boolean; violatingIncidents: HarassmentIncident[] } => {
-    const violatingIncidents: HarassmentIncident[] = [];
+  ): {
+    passes: boolean;
+    violatingIncidents: Array<{ incident: HarassmentIncident; minDistance: number; dangerRadius: number }>;
+  } => {
+    const violatingIncidents: Array<{ incident: HarassmentIncident; minDistance: number; dangerRadius: number }> = [];
+
+    if (!routeCoordinates || routeCoordinates.length < 2 || incidents.length === 0) {
+      return { passes: false, violatingIncidents: [] };
+    }
+
+    // Use segment distance (more accurate than sparse point sampling)
+    // Check every segment so we don't miss violations on curved roads.
+    const segmentStep = 1;
 
     for (const incident of incidents) {
       const dangerRadius = getSeverityRadius(incident.severity);
-      
-      // Sample route points (every 5th point for performance)
-      for (let i = 0; i < routeCoordinates.length; i += 5) {
-        const [lng, lat] = routeCoordinates[i];
-        const distance = calculateDistance(lat, lng, incident.lat, incident.lng);
-        
-        if (distance < dangerRadius) {
-          if (!violatingIncidents.find(v => v.id === incident.id)) {
-            violatingIncidents.push(incident);
-          }
-          break; // Found violation for this incident, move to next
-        }
+      let minDistance = Number.POSITIVE_INFINITY;
+
+      for (let i = 0; i < routeCoordinates.length - 1; i += segmentStep) {
+        const [aLng, aLat] = routeCoordinates[i];
+        const [bLng, bLat] = routeCoordinates[i + 1];
+
+        const d = pointToSegmentDistanceMeters(
+          incident.lat,
+          incident.lng,
+          aLat,
+          aLng,
+          bLat,
+          bLng
+        );
+
+        if (d < minDistance) minDistance = d;
+        if (minDistance < dangerRadius) break; // early exit
+      }
+
+      if (minDistance < dangerRadius) {
+        violatingIncidents.push({ incident, minDistance, dangerRadius });
       }
     }
+
+    // Put the most severe / closest violations first (useful for waypoint injection)
+    const severityWeight = (s: HarassmentIncident["severity"]) => (s === "high" ? 3 : s === "medium" ? 2 : 1);
+    violatingIncidents.sort((a, b) => {
+      const sw = severityWeight(b.incident.severity) - severityWeight(a.incident.severity);
+      if (sw !== 0) return sw;
+      return a.minDistance - b.minDistance;
+    });
 
     return { passes: violatingIncidents.length > 0, violatingIncidents };
   };
@@ -585,9 +654,8 @@ const MyMap: React.FC = () => {
   // Main routing function with TRUE incident avoidance
   const getRoute = async (start: {lat: number; lng: number}, end: CustomDestination) => {
     try {
-      const dangerousIncidents = harassmentIncidents.filter(
-        i => i.severity === 'high' || i.severity === 'medium'
-      );
+      // Avoid all reported incident points; severity controls the radius.
+      const dangerousIncidents = harassmentIncidents;
 
       console.log(`🗺️ Requesting routes (${dangerousIncidents.length} danger zones to avoid)...`);
 
@@ -640,8 +708,13 @@ const MyMap: React.FC = () => {
       // PHASE 3: If safe route exists, use it
       // ============================================
       if (safeRoutes.length > 0) {
-        // Sort by safety score
-        safeRoutes.sort((a, b) => b.safety.score - a.safety.score);
+        // Choose the shortest safe route (Google-like alternate route behavior)
+        // If tie, pick the safer one.
+        safeRoutes.sort((a, b) => {
+          const dist = a.distance - b.distance;
+          if (dist !== 0) return dist;
+          return (b.safety?.score ?? 0) - (a.safety?.score ?? 0);
+        });
         const bestRoute = safeRoutes[0];
         console.log(`🛡️ Selected safe route: Safety ${bestRoute.safety.score}/100, Distance ${(bestRoute.distance / 1000).toFixed(1)}km`);
         setRouteData(bestRoute);
@@ -653,9 +726,14 @@ const MyMap: React.FC = () => {
       // ============================================
       console.log("⚠️ All routes pass through danger zones - generating avoidance route...");
 
+      // Prefer the shortest unsafe route as the baseline for waypoint injection
+      unsafeRoutes.sort((a, b) => (a.route?.distance ?? 0) - (b.route?.distance ?? 0));
+
       // Get the most problematic incidents from the shortest route
       const shortestUnsafe = unsafeRoutes[0];
-      const incidentsToAvoid = shortestUnsafe.violatingIncidents.slice(0, 3); // Max 3 waypoints
+      const incidentsToAvoid = shortestUnsafe.violatingIncidents
+        .slice(0, 3)
+        .map((v: { incident: HarassmentIncident }) => v.incident); // Max 3 waypoints
 
       // Calculate avoidance waypoints
       const waypoints = incidentsToAvoid.map((incident: HarassmentIncident) => 
@@ -1061,6 +1139,34 @@ const MyMap: React.FC = () => {
   const updateSafetySettings = (updates: Partial<SafetySettings>): void => {
     setSafetySettings((prev) => ({ ...prev, ...updates }));
   };
+
+  // Keep route/start-point state consistent when toggling Safety Mode.
+  // Requirement: when Safety Mode is OFF, point A (start) should default to current location.
+  useEffect(() => {
+    const hasDestination = Boolean(selectedDestination);
+    if (!hasDestination) return;
+
+    // When safety mode is turned off, force start=A=current location and clear custom start inputs.
+    if (!safetySettings.safetyMode) {
+      setUseCurrentAsStart(true);
+      setStartLocation(null);
+      setStartQuery("");
+      setStartSearchResults([]);
+      setPickingLocationFor(null);
+      setActiveSearchField(null);
+
+      if (currentLocation && selectedDestination) {
+        getRoute(currentLocation, selectedDestination);
+      }
+      return;
+    }
+
+    // When safety mode is ON, recompute using whichever start mode is currently selected.
+    const startPoint = useCurrentAsStart ? currentLocation : startLocation;
+    if (startPoint && selectedDestination) {
+      getRoute(startPoint, selectedDestination);
+    }
+  }, [safetySettings.safetyMode]);
 
   if (!MAPBOX_TOKEN) {
     return (
@@ -1874,10 +1980,6 @@ const MyMap: React.FC = () => {
                   checked={safetySettings.safetyMode}
                   onChange={(e) => {
                     updateSafetySettings({ safetyMode: e.target.checked });
-                    // Recalculate route if one exists
-                    if (routeData && currentLocation && selectedDestination) {
-                      getRoute(currentLocation, selectedDestination);
-                    }
                   }}
                   className="sr-only peer"
                   title="Toggle safety mode"
