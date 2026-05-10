@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 import google.generativeai as genai
 from PIL import Image
 import io
+from urllib.parse import urlparse
 
 load_dotenv()
 
@@ -35,9 +36,61 @@ router = APIRouter(prefix="/api/incidents", tags=["Incidents & Blockchain"])
 # Environment variables
 MONGODB_URL = os.getenv("MONGODB_URL", "mongodb://localhost:27017")
 MONGODB_DB = os.getenv("MONGODB_DB", "nirbhaya_db")
-BLOCKCHAIN_RPC_URL = os.getenv("BLOCKCHAIN_RPC_URL", "http://127.0.0.1:7545")
+BLOCKCHAIN_RPC_URL = (os.getenv("BLOCKCHAIN_RPC_URL", "http://127.0.0.1:7545") or "").strip()
+# Some .env files use an uppercase scheme; normalize for consistency.
+if BLOCKCHAIN_RPC_URL.startswith("HTTP://"):
+    BLOCKCHAIN_RPC_URL = "http://" + BLOCKCHAIN_RPC_URL[len("HTTP://"):]
+elif BLOCKCHAIN_RPC_URL.startswith("HTTPS://"):
+    BLOCKCHAIN_RPC_URL = "https://" + BLOCKCHAIN_RPC_URL[len("HTTPS://"):]
 RELAYER_PRIVATE_KEY = os.getenv("RELAYER_PRIVATE_KEY")
-CONTRACT_ADDRESS = os.getenv("INCIDENT_REGISTRY_CONTRACT_ADDRESS")
+CONTRACT_ADDRESS = (os.getenv("INCIDENT_REGISTRY_CONTRACT_ADDRESS") or "").strip() or None
+
+
+def _is_local_rpc(rpc_url: str) -> bool:
+    try:
+        parsed = urlparse(rpc_url)
+        host = (parsed.hostname or "").lower()
+        return host in {"127.0.0.1", "localhost"}
+    except Exception:
+        return False
+
+
+def _load_local_deployed_contract_address() -> Optional[str]:
+    """Best-effort load of local deployed contract address from repo root."""
+    try:
+        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        deployed_path = os.path.join(repo_root, "deployed-contracts-local.json")
+        if not os.path.exists(deployed_path):
+            return None
+
+        with open(deployed_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        address = data.get("contractAddress")
+        if not isinstance(address, str) or not address.strip():
+            return None
+        return address.strip()
+    except Exception:
+        return None
+
+
+LOCAL_DEPLOYED_CONTRACT_ADDRESS = (
+    _load_local_deployed_contract_address() if _is_local_rpc(BLOCKCHAIN_RPC_URL) else None
+)
+
+if LOCAL_DEPLOYED_CONTRACT_ADDRESS:
+    if not CONTRACT_ADDRESS:
+        print(
+            "ℹ️  Using local deployed contract address from deployed-contracts-local.json: "
+            f"{LOCAL_DEPLOYED_CONTRACT_ADDRESS}"
+        )
+        CONTRACT_ADDRESS = LOCAL_DEPLOYED_CONTRACT_ADDRESS
+    elif CONTRACT_ADDRESS.lower() != LOCAL_DEPLOYED_CONTRACT_ADDRESS.lower():
+        print(
+            "⚠️  INCIDENT_REGISTRY_CONTRACT_ADDRESS differs from deployed-contracts-local.json. "
+            "Using the local deployed contract address for localhost RPC."
+        )
+        CONTRACT_ADDRESS = LOCAL_DEPLOYED_CONTRACT_ADDRESS
 
 # MongoDB setup
 mongo_client = AsyncIOMotorClient(MONGODB_URL)
@@ -85,7 +138,15 @@ CONTRACT_ABI = [
     }
 ]
 
-contract = w3.eth.contract(address=CONTRACT_ADDRESS, abi=CONTRACT_ABI) if CONTRACT_ADDRESS else None
+blockchain_connected = w3.is_connected() if w3 else False
+if not blockchain_connected:
+    print(f"⚠️  Blockchain RPC not reachable at {BLOCKCHAIN_RPC_URL} - blockchain submission will be skipped")
+
+contract = (
+    w3.eth.contract(address=CONTRACT_ADDRESS, abi=CONTRACT_ABI)
+    if (CONTRACT_ADDRESS and blockchain_connected)
+    else None
+)
 
 
 # Helper Functions
@@ -393,7 +454,12 @@ async def submit_incident(
                 })
                 
                 signed_tx = w3.eth.account.sign_transaction(tx, relayer_account.key)
-                tx_hash = w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+                raw_tx = getattr(signed_tx, "raw_transaction", None) or getattr(signed_tx, "rawTransaction", None)
+                if raw_tx is None:
+                    raise AttributeError(
+                        "SignedTransaction does not expose raw transaction bytes as raw_transaction or rawTransaction"
+                    )
+                tx_hash = w3.eth.send_raw_transaction(raw_tx)
                 receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
                 
                 blockchain_tx = tx_hash.hex()
@@ -498,9 +564,21 @@ async def submit_incident(
             blockchain_submitted=blockchain_submitted,
             message="Incident stored in MongoDB" + (" and blockchain" if blockchain_submitted else "")
         )
-    
+
+    except HTTPException:
+        # Preserve intended client-facing errors (e.g., 400 invalid incident, 422 context mismatch)
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to submit incident: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "SUBMIT_FAILED",
+                "message": "Failed to submit incident",
+                "reason": str(e),
+            },
+        )
 
 
 @router.get("/list")
@@ -755,6 +833,7 @@ async def health_check():
         "blockchain_connected": w3.is_connected() if w3 else False,
         "blockchain_rpc": BLOCKCHAIN_RPC_URL,
         "contract_configured": bool(CONTRACT_ADDRESS),
+        "contract_address": CONTRACT_ADDRESS,
         "relayer_configured": bool(relayer_account),
         "relayer_address": relayer_account.address if relayer_account else None
     }
