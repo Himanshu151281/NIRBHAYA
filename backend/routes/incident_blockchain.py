@@ -435,6 +435,22 @@ async def submit_incident(
         if relayer_account and contract:
             try:
                 print(f"🚀 STARTING BLOCKCHAIN SUBMISSION...")
+
+                # Reporter address must be a non-zero address for the contract.
+                # If the client doesn't provide a wallet (or sends zero), default to relayer.
+                reporter_for_chain = None
+                try:
+                    if reporter_address and Web3.is_address(reporter_address):
+                        candidate = Web3.to_checksum_address(reporter_address)
+                        if int(candidate, 16) != 0:
+                            reporter_for_chain = candidate
+                except Exception:
+                    reporter_for_chain = None
+
+                if reporter_for_chain is None:
+                    reporter_for_chain = relayer_account.address
+
+                print(f"   Reporter (chain): {reporter_for_chain}")
                 # Convert hash to bytes32
                 hash_bytes = bytes.fromhex(combined_hash)
                 
@@ -445,7 +461,7 @@ async def submit_incident(
                     mongodb_id,  # Use MongoDB ID as reference
                     mongodb_id,  # Both point to same MongoDB record
                     hash_bytes,
-                    Web3.to_checksum_address(reporter_address)
+                    reporter_for_chain
                 ).build_transaction({
                     "from": relayer_account.address,
                     "nonce": nonce,
